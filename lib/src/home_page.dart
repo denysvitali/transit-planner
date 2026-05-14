@@ -345,18 +345,21 @@ class _HomePageState extends State<HomePage> {
     final transitColor = _hexColor(scheme.primary);
     final walkColor = _hexColor(scheme.outline);
 
-    for (final line in _routeLines) {
+    final staleRouteLines = List<Line>.of(_routeLines);
+    _routeLines.clear();
+    final staleMarkerSymbols = List<Symbol>.of(_markerSymbols);
+    _markerSymbols.clear();
+
+    for (final line in staleRouteLines) {
       try {
         await controller.removeLine(line);
       } catch (_) {}
     }
-    _routeLines.clear();
-    for (final sym in _markerSymbols) {
+    for (final sym in staleMarkerSymbols) {
       try {
         await controller.removeSymbol(sym);
       } catch (_) {}
     }
-    _markerSymbols.clear();
 
     final origin = _origin;
     final destination = _destination;
