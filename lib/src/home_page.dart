@@ -5,6 +5,7 @@ import 'package:maplibre_gl/maplibre_gl.dart';
 import 'app_log.dart';
 import 'local_router.dart';
 import 'models.dart';
+import 'stop_search.dart';
 import 'theme.dart';
 
 const _fallbackStyle = 'https://demotiles.maplibre.org/style.json';
@@ -19,8 +20,14 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final _originController = TextEditingController(text: 'Wankdorf');
-  final _destinationController = TextEditingController(text: 'Bern Bahnhof');
+  TransitStop? _origin = kMockStops.firstWhere(
+    (stop) => stop.id == 'wankdorf',
+    orElse: () => kMockStops.first,
+  );
+  TransitStop? _destination = kMockStops.firstWhere(
+    (stop) => stop.id == 'bern_bahnhof',
+    orElse: () => kMockStops.last,
+  );
   final Set<TransitMode> _modes = {
     TransitMode.bus,
     TransitMode.tram,
@@ -37,11 +44,12 @@ class _HomePageState extends State<HomePage> {
     _plan();
   }
 
-  @override
-  void dispose() {
-    _originController.dispose();
-    _destinationController.dispose();
-    super.dispose();
+  void _setOrigin(TransitStop stop) {
+    setState(() => _origin = stop);
+  }
+
+  void _setDestination(TransitStop stop) {
+    setState(() => _destination = stop);
   }
 
   Future<void> _plan() async {
@@ -51,23 +59,23 @@ class _HomePageState extends State<HomePage> {
         'Route planning requested with no transit modes selected.',
       );
     }
+    final origin = _origin ??
+        const TransitStop(
+          id: 'origin',
+          name: 'Origin',
+          latitude: 46.963,
+          longitude: 7.465,
+        );
+    final destination = _destination ??
+        const TransitStop(
+          id: 'destination',
+          name: 'Destination',
+          latitude: 46.948,
+          longitude: 7.439,
+        );
     final request = RouteRequest(
-      origin: TransitStop(
-        id: 'origin',
-        name: _originController.text.trim().isEmpty
-            ? 'Origin'
-            : _originController.text.trim(),
-        latitude: 46.963,
-        longitude: 7.465,
-      ),
-      destination: TransitStop(
-        id: 'destination',
-        name: _destinationController.text.trim().isEmpty
-            ? 'Destination'
-            : _destinationController.text.trim(),
-        latitude: 46.948,
-        longitude: 7.439,
-      ),
+      origin: origin,
+      destination: destination,
       departure: DateTime.now(),
       modes: _modes,
       maxTransfers: _maxTransfers,
@@ -171,20 +179,18 @@ class _PlannerPanel extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: AppSpacing.m),
-                TextField(
-                  controller: state._originController,
-                  decoration: const InputDecoration(
-                    labelText: 'Origin',
-                    prefixIcon: Icon(Icons.trip_origin),
-                  ),
+                StopPickerField(
+                  label: 'Origin',
+                  icon: Icons.trip_origin,
+                  stop: state._origin,
+                  onChanged: state._setOrigin,
                 ),
                 const SizedBox(height: AppSpacing.s),
-                TextField(
-                  controller: state._destinationController,
-                  decoration: const InputDecoration(
-                    labelText: 'Destination',
-                    prefixIcon: Icon(Icons.place_outlined),
-                  ),
+                StopPickerField(
+                  label: 'Destination',
+                  icon: Icons.place_outlined,
+                  stop: state._destination,
+                  onChanged: state._setDestination,
                 ),
                 const SizedBox(height: AppSpacing.m),
                 Wrap(
