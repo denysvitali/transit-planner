@@ -30,6 +30,9 @@ jobs:
           channel: stable
           flutter-version: 3.41.9
           cache: true
+          pub-cache: true
+          cache-key: "flutter-sdk-:os:-:channel:-:version:-:arch:"
+          pub-cache-key: "flutter-pub-:os:-:channel:-:version:-:arch:-:hash:"
 
       - name: Get dependencies
         run: flutter pub get
@@ -294,6 +297,9 @@ jobs:
           channel: stable
           flutter-version: 3.41.9
           cache: true
+          pub-cache: true
+          cache-key: "flutter-sdk-:os:-:channel:-:version:-:arch:"
+          pub-cache-key: "flutter-pub-:os:-:channel:-:version:-:arch:-:hash:"
 
       - name: Install icon generation deps
         run: |
