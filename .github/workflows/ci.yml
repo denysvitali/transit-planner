@@ -7,9 +7,13 @@ concurrency:
 on:
   push:
     branches: [main, master, develop]
+    tags: ['v*']
   pull_request:
     branches: [main, master]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   flutter:
@@ -57,9 +61,19 @@ jobs:
     name: Build Android Release APK
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Build a release APK for every commit pushed to a tracked branch, version
+    # tags, and manual runs. PRs still build (via the default trigger) but do
+    # not publish a GitHub Release.
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+
+      - name: Determine build metadata
+        shell: bash
+        id: build_meta
+        run: |
+          BUILD_NUMBER=$(( ${{ github.run_number }} * 100 + ${{ github.run_attempt }} ))
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_OUTPUT
 
       - name: Setup Java
         uses: actions/setup-java@v5
@@ -78,4 +92,38 @@ jobs:
         run: flutter pub get
 
       - name: Build release APK
-        run: flutter build apk --release
+        run: |
+          flutter build apk --release --no-pub \
+            --build-number ${{ steps.build_meta.outputs.BUILD_NUMBER }}
+
+      - name: Upload Release APK artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: transit-planner-release-b${{ steps.build_meta.outputs.BUILD_NUMBER }}
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 14
+
+      - name: Determine release version
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        id: release_version
+        run: |
+          SEMVER=$(grep '^version:' pubspec.yaml | sed 's/version: *//' | cut -d'+' -f1 | tr -d ' ')
+          BUILD_NUMBER="${{ steps.build_meta.outputs.BUILD_NUMBER }}"
+          RELEASE_TAG="v${SEMVER}+${BUILD_NUMBER}"
+          RELEASE_NAME="Transit Planner v${SEMVER} (build ${BUILD_NUMBER})"
+          echo "SEMVER=$SEMVER" >> $GITHUB_OUTPUT
+          echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_OUTPUT
+          echo "RELEASE_NAME=$RELEASE_NAME" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_version.outputs.RELEASE_TAG }}
+          name: ${{ steps.release_version.outputs.RELEASE_NAME }}
+          draft: false
+          prerelease: true
+          generate_release_notes: false
+          files: build/app/outputs/flutter-apk/app-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
