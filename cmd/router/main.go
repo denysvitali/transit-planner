@@ -2,9 +2,14 @@
 //
 // Subcommands:
 //
-//	route -feed <dir> -from <stop_id> -to <stop_id> -depart HH:MM[:SS] [-max-transfers N]
-//	stops -feed <dir> [-prefix P]
-//	info  -feed <dir>
+//	route  -feed <path>... [-country <CC>] -from <stop_id> -to <stop_id> -depart HH:MM[:SS] [-max-transfers N]
+//	stops  -feed <path>... [-country <CC>] [-prefix P]
+//	info   -feed <path>... [-country <CC>]
+//
+// -feed accepts a directory of GTFS CSVs or a .zip archive and may be
+// repeated to merge multiple operators. -country <CC> is shorthand for
+// "every feed under assets/real_gtfs/<cc>/" so a Tokyo-Osaka query can be
+// expressed as `route -country jp -from ... -to ...`.
 package main
 
 import (
@@ -13,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -57,10 +63,18 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  info    show feed counts")
 }
 
+// repeatableString collects -feed values across multiple flag occurrences.
+type repeatableString []string
+
+func (r *repeatableString) String() string     { return strings.Join(*r, ",") }
+func (r *repeatableString) Set(v string) error { *r = append(*r, v); return nil }
+
 func runRoute(args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("route", flag.ContinueOnError)
 	fs.SetOutput(stdout)
-	feedDir := fs.String("feed", "", "GTFS feed directory")
+	var feedPaths repeatableString
+	fs.Var(&feedPaths, "feed", "GTFS feed directory or .zip (repeat for multiple operators)")
+	country := fs.String("country", "", "ISO 3166-1 alpha-2 code (loads assets/real_gtfs/<cc>/*)")
 	from := fs.String("from", "", "origin stop_id")
 	to := fs.String("to", "", "destination stop_id")
 	depart := fs.String("depart", "", "departure time HH:MM or HH:MM:SS")
@@ -68,16 +82,16 @@ func runRoute(args []string, stdout io.Writer) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *feedDir == "" || *from == "" || *to == "" || *depart == "" {
-		return errors.New("route: -feed, -from, -to and -depart are required")
+	if *from == "" || *to == "" || *depart == "" {
+		return errors.New("route: -from, -to and -depart are required")
+	}
+	feed, err := resolveFeed(feedPaths, *country)
+	if err != nil {
+		return err
 	}
 	departure, err := parseClockTime(*depart)
 	if err != nil {
 		return fmt.Errorf("route: %w", err)
-	}
-	feed, err := router.LoadGTFS(*feedDir)
-	if err != nil {
-		return fmt.Errorf("load feed: %w", err)
 	}
 	engine := router.NewEngine(feed)
 	itinerary, err := engine.Route(*from, *to, departure, router.Options{MaxTransfers: *maxTransfers})
@@ -91,17 +105,16 @@ func runRoute(args []string, stdout io.Writer) error {
 func runStops(args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("stops", flag.ContinueOnError)
 	fs.SetOutput(stdout)
-	feedDir := fs.String("feed", "", "GTFS feed directory")
+	var feedPaths repeatableString
+	fs.Var(&feedPaths, "feed", "GTFS feed directory or .zip (repeatable)")
+	country := fs.String("country", "", "ISO 3166-1 alpha-2 code (loads assets/real_gtfs/<cc>/*)")
 	prefix := fs.String("prefix", "", "case-insensitive stop name prefix")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *feedDir == "" {
-		return errors.New("stops: -feed is required")
-	}
-	feed, err := router.LoadGTFS(*feedDir)
+	feed, err := resolveFeed(feedPaths, *country)
 	if err != nil {
-		return fmt.Errorf("load feed: %w", err)
+		return err
 	}
 	want := strings.ToLower(*prefix)
 	matches := make([]router.Stop, 0, len(feed.Stops))
@@ -129,22 +142,119 @@ func runStops(args []string, stdout io.Writer) error {
 func runInfo(args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("info", flag.ContinueOnError)
 	fs.SetOutput(stdout)
-	feedDir := fs.String("feed", "", "GTFS feed directory")
+	var feedPaths repeatableString
+	fs.Var(&feedPaths, "feed", "GTFS feed directory or .zip (repeatable)")
+	country := fs.String("country", "", "ISO 3166-1 alpha-2 code (loads assets/real_gtfs/<cc>/*)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *feedDir == "" {
-		return errors.New("info: -feed is required")
-	}
-	feed, err := router.LoadGTFS(*feedDir)
+	feed, err := resolveFeed(feedPaths, *country)
 	if err != nil {
-		return fmt.Errorf("load feed: %w", err)
+		return err
 	}
 	fmt.Fprintf(stdout, "stops:     %d\n", len(feed.Stops))
 	fmt.Fprintf(stdout, "routes:    %d\n", len(feed.Routes))
 	fmt.Fprintf(stdout, "trips:     %d\n", len(feed.Trips))
 	fmt.Fprintf(stdout, "transfers: %d\n", len(feed.Transfers))
 	return nil
+}
+
+// resolveFeed loads every feed path (and every feed under -country, if set)
+// and merges them. A single feed is returned unchanged; multiple feeds are
+// combined with router.Merge so cross-operator transfers stitch on stop
+// names.
+func resolveFeed(paths []string, country string) (*router.Feed, error) {
+	if country != "" {
+		discovered, err := discoverCountryFeeds(country)
+		if err != nil {
+			return nil, err
+		}
+		paths = append(paths, discovered...)
+	}
+	if len(paths) == 0 {
+		return nil, errors.New("at least one -feed or a -country with downloaded feeds is required")
+	}
+
+	loaded := make(map[string]*router.Feed, len(paths))
+	for _, path := range paths {
+		feed, err := loadFeedPath(path)
+		if err != nil {
+			return nil, fmt.Errorf("load %s: %w", path, err)
+		}
+		prefix := feedPrefix(path)
+		// Disambiguate prefix collisions deterministically.
+		base := prefix
+		for i := 2; ; i++ {
+			if _, dup := loaded[prefix]; !dup {
+				break
+			}
+			prefix = fmt.Sprintf("%s%d", base, i)
+		}
+		loaded[prefix] = feed
+	}
+	if len(loaded) == 1 {
+		for _, f := range loaded {
+			return f, nil
+		}
+	}
+	return router.Merge(loaded), nil
+}
+
+func loadFeedPath(path string) (*router.Feed, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.IsDir() {
+		return router.LoadGTFS(path)
+	}
+	if strings.HasSuffix(strings.ToLower(path), ".zip") {
+		return router.LoadGTFSZip(path)
+	}
+	return nil, fmt.Errorf("unsupported feed path %q (expected directory or .zip)", path)
+}
+
+func feedPrefix(path string) string {
+	base := filepath.Base(path)
+	base = strings.TrimSuffix(base, filepath.Ext(base))
+	base = strings.ReplaceAll(base, " ", "_")
+	if base == "" || base == "." {
+		return "feed"
+	}
+	return base
+}
+
+func discoverCountryFeeds(country string) ([]string, error) {
+	root := filepath.Join("assets", "real_gtfs", strings.ToLower(country))
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, fmt.Errorf("country %q: %w (run `go run ./tool/fetch_gtfs -country %s` first)", country, err, strings.ToUpper(country))
+	}
+	var out []string
+	for _, entry := range entries {
+		full := filepath.Join(root, entry.Name())
+		if entry.IsDir() {
+			// Each feed sits in its own subdir; pick the .zip inside.
+			matches, _ := filepath.Glob(filepath.Join(full, "*.zip"))
+			if len(matches) > 0 {
+				out = append(out, matches...)
+				continue
+			}
+			// Or an extracted directory with stops.txt.
+			if _, err := os.Stat(filepath.Join(full, "stops.txt")); err == nil {
+				out = append(out, full)
+			}
+			continue
+		}
+		if strings.HasSuffix(strings.ToLower(entry.Name()), ".zip") {
+			out = append(out, full)
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("country %q: no GTFS bundles under %s", country, root)
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 // parseClockTime accepts HH:MM or HH:MM:SS and returns seconds since midnight.

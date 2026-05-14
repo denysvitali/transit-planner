@@ -78,32 +78,79 @@ The script needs `rsvg-convert` (Debian/Ubuntu: `librsvg2-bin`) and Pillow
 
 ## Transit data
 
-The router is wired against **real, no-API-key GTFS feeds** from Japan's
-Public Transportation Open Data Center (ODPT). The first integration covers
-the Tokyo Metropolitan Bureau of Transportation (都営):
+The router is wired against **real, no-API-key GTFS feeds** organised by ISO
+3166-1 alpha-2 country code so multi-operator queries (e.g. Tokyo↔Osaka) can
+be planned by fetching every feed for a country and merging them at load
+time.
 
-- **Toei subway lines** (浅草, 三田, 新宿, 大江戸, 日暮里舎人, 都電荒川) —
-  ~150 stations, ~5 600 trips. Vendored as the CI fixture under
-  [`assets/sample_toei_train/`](assets/sample_toei_train/).
-- **Toei municipal bus network** — ~5 400 stops, ~47 000 trips. Downloaded
-  on demand into `assets/real_gtfs/` (gitignored) via the fetcher tool.
+Sources are open and license-tagged:
 
-Both feeds are CC-BY 4.0 — see
-[`LICENSES_THIRD_PARTY.md`](LICENSES_THIRD_PARTY.md) for the required
-attribution string.
+- **[Mobility Database](https://mobilitydatabase.org)** — the canonical
+  global catalog (6000+ GTFS feeds across 99+ countries; their CSV at
+  `https://files.mobilitydatabase.org/feeds_v2.csv` is what we cross-check
+  against). Most of the Kansai-region feeds below resolve to its
+  `api.gtfs-data.jp` mirror.
+- **[ODPT public bucket](https://www.odpt.org)** — `api-public.odpt.org`
+  hosts the Tokyo Metropolitan Bureau of Transportation feeds (CC-BY 4.0).
+
+Currently catalogued (no API key required):
+
+| Country | Region | Feeds |
+|---------|--------|-------|
+| JP | Tokyo | `toei-bus`, `toei-train` |
+| JP | Hyogo | `kobe-shiokaze`, `kobe-satoyama`, `himeji-ieshima`, `takarazuka-runrunbus`, `nishinomiya-sakurayamanami` |
+| JP | Nara | `yamatokoriyama-kingyobus` |
+| JP | Wakayama | `rinkan-koyasan` |
+| JP | Ishikawa | `kanazawa-flatbus`, `kanazawa-hakusan-meguru`, `kanazawa-tsubata-bus` |
+
+Major private rail (JR, Tokyo Metro, Hankyu, Hanshin, Nankai, Keihan,
+Kintetsu) and the Shinkansen are only published through ODPT's
+authenticated developer API and are intentionally out of scope here.
+
+Licences vary per feed — see [`LICENSES_THIRD_PARTY.md`](LICENSES_THIRD_PARTY.md)
+and each downloaded `MANIFEST.json` for the exact attribution string.
 
 ```sh
-go run ./tool/fetch_gtfs -list                  # show known feeds
-go run ./tool/fetch_gtfs -feed toei-bus         # ~6 MB zip
+go run ./tool/fetch_gtfs -list                  # show every known feed
+go run ./tool/fetch_gtfs -list -country JP      # filter to one country
 go run ./tool/fetch_gtfs -feed toei-train       # ~750 KB zip
+go run ./tool/fetch_gtfs -country JP            # fetch every JP feed
 ```
 
-Load a feed from Go:
+Downloads land under `assets/real_gtfs/<country>/<feed>/<feed>.zip` with a
+`MANIFEST.json` recording source URL, timestamp, and SHA-256. The directory
+is gitignored; commit only vendored fixtures under `assets/sample_*`.
+
+### Loading and merging feeds
+
+Load a single feed:
 
 ```go
 feed, err := router.LoadGTFSZip("assets/sample_toei_train/Toei-Train-GTFS.zip")
-// or, for an extracted directory of CSVs:
-feed, err = router.LoadGTFS("assets/real_gtfs/toei_bus")
+// or an extracted directory of CSVs:
+feed, err = router.LoadGTFS("assets/real_gtfs/jp/toei_bus")
+```
+
+Merge several feeds into one routable network (IDs get namespaced as
+`<prefix>:<id>`; same-named stops are stitched into cross-feed transfers
+automatically):
+
+```go
+merged := router.Merge(map[string]*router.Feed{
+    "toei": toeiTrain,
+    "kobe": kobeShiokaze,
+})
+engine := router.NewEngine(merged)
+```
+
+The CLI accepts multiple feeds or an entire country directory:
+
+```sh
+go run ./cmd/router info -country jp
+go run ./cmd/router route \
+    -country jp \
+    -from "toei:A07" -to "kobe:0001" \
+    -depart 08:00
 ```
 
 ### Synthetic test fixture
