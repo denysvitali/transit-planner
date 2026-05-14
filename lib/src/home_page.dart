@@ -48,6 +48,10 @@ class _HomePageState extends State<HomePage> {
   bool _loading = false;
   int _maxTransfers = 2;
   List<Itinerary> _itineraries = const [];
+  // Null = "depart now" (or the feed's defaultDepartureHour when no clock
+  // is selected). When the user picks a time, we anchor planning to that
+  // specific TimeOfDay against today's date.
+  TimeOfDay? _departureTime;
 
   MapLibreMapController? _mapController;
   bool _styleLoaded = false;
@@ -244,12 +248,36 @@ class _HomePageState extends State<HomePage> {
   /// The Toei timetable runs ~05:00–24:00 Asia/Tokyo. If the user is in
   /// another timezone or asks at 03:00, "now" returns no trips. For the
   /// initial plan, anchor to a fixed in-service moment so the home page
-  /// always has something to show.
+  /// always has something to show. A user-picked [_departureTime] always
+  /// wins over the feed default.
   DateTime _earliestDepartureForFeed() {
-    final overrideHour = _activeFeed.defaultDepartureHour;
-    if (overrideHour == null) return DateTime.now();
     final now = DateTime.now();
+    final picked = _departureTime;
+    if (picked != null) {
+      return DateTime(now.year, now.month, now.day, picked.hour, picked.minute);
+    }
+    final overrideHour = _activeFeed.defaultDepartureHour;
+    if (overrideHour == null) return now;
     return DateTime(now.year, now.month, now.day, overrideHour, 0);
+  }
+
+  Future<void> _pickDepartureTime() async {
+    final initial = _departureTime ??
+        TimeOfDay.fromDateTime(_earliestDepartureForFeed());
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initial,
+      helpText: 'Departure time',
+    );
+    if (picked == null) return;
+    setState(() => _departureTime = picked);
+    await _plan();
+  }
+
+  void _clearDepartureTime() {
+    if (_departureTime == null) return;
+    setState(() => _departureTime = null);
+    _plan();
   }
 
   List<Itinerary> _filterByModes(List<Itinerary> itineraries) {
@@ -462,10 +490,13 @@ class _HomePageState extends State<HomePage> {
                   loading: _loading,
                   modes: _modes,
                   maxTransfers: _maxTransfers,
+                  departureTime: _departureTime,
                   onFeedChanged: _switchFeed,
                   onModeToggled: _setModeEnabled,
                   onMaxTransfersChanged: _setMaxTransfers,
                   onPlan: _plan,
+                  onPickDepartureTime: _pickDepartureTime,
+                  onClearDepartureTime: _clearDepartureTime,
                   origin: _origin,
                   destination: _destination,
                 ),
@@ -675,10 +706,13 @@ class _ResultsSheet extends StatelessWidget {
     required this.loading,
     required this.modes,
     required this.maxTransfers,
+    required this.departureTime,
     required this.onFeedChanged,
     required this.onModeToggled,
     required this.onMaxTransfersChanged,
     required this.onPlan,
+    required this.onPickDepartureTime,
+    required this.onClearDepartureTime,
     required this.origin,
     required this.destination,
   });
@@ -689,10 +723,13 @@ class _ResultsSheet extends StatelessWidget {
   final bool loading;
   final Set<TransitMode> modes;
   final int maxTransfers;
+  final TimeOfDay? departureTime;
   final ValueChanged<TransitFeed> onFeedChanged;
   final void Function(TransitMode, bool) onModeToggled;
   final ValueChanged<double> onMaxTransfersChanged;
   final VoidCallback onPlan;
+  final VoidCallback onPickDepartureTime;
+  final VoidCallback onClearDepartureTime;
   final RoutePoint? origin;
   final RoutePoint? destination;
 
@@ -831,6 +868,39 @@ class _ResultsSheet extends StatelessWidget {
                       ),
                     ),
                     Text('$maxTransfers'),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.m,
+                  0,
+                  AppSpacing.m,
+                  AppSpacing.s,
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.schedule),
+                    const SizedBox(width: AppSpacing.s),
+                    Text('Depart', style: theme.textTheme.bodySmall),
+                    const SizedBox(width: AppSpacing.s),
+                    Expanded(
+                      child: ActionChip(
+                        avatar: const Icon(Icons.access_time, size: 18),
+                        label: Text(
+                          departureTime == null
+                              ? 'Now'
+                              : departureTime!.format(context),
+                        ),
+                        onPressed: onPickDepartureTime,
+                      ),
+                    ),
+                    if (departureTime != null)
+                      IconButton(
+                        tooltip: 'Reset to default',
+                        icon: const Icon(Icons.close),
+                        onPressed: onClearDepartureTime,
+                      ),
                   ],
                 ),
               ),
