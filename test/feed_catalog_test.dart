@@ -24,4 +24,10 @@ void main() {
 
     expect(componentFeedsFor(toeiTrain), [toeiTrain]);
   });
+
+  test('Hakusan Meguru feed uses current CKAN resource URL', () {
+    final meguru = findFeedById('kanazawa-hakusan-meguru')!;
+
+    expect(meguru.sourceUrl, contains('50049b19-fe9f-4c1f-a9ea-9d0a24141644'));
+  });
 }

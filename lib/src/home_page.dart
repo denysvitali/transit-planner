@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_log.dart';
 import 'feed_catalog.dart';
+import 'feed_load_progress.dart';
 import 'go_ffi_router.dart';
 import 'local_router.dart';
 import 'location_search_page.dart';
@@ -22,9 +23,7 @@ class HomePage extends StatefulWidget {
   const HomePage({super.key, this.router});
 
   /// Optional injected router. When null, the page loads the real Go-FFI
-  /// router on init (and falls back to a [MockTransitRouter] if the FFI
-  /// is unavailable on the current platform). Tests use this slot to pin
-  /// a deterministic mock.
+  /// router on init. Tests use this slot to pin a deterministic mock.
   final LocalTransitRouter? router;
 
   @override
@@ -52,6 +51,8 @@ class _HomePageState extends State<HomePage> {
   // is selected). When the user picks a time, we anchor planning to that
   // specific TimeOfDay against today's date.
   TimeOfDay? _departureTime;
+  FeedLoadProgress? _feedProgress;
+  String? _loadError;
 
   MapLibreMapController? _mapController;
   bool _styleLoaded = false;
@@ -80,48 +81,68 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _openFeed(TransitFeed feed) async {
-    final router = widget.router ?? await openFeedRouter(feed);
-    final stops = await router.stops();
-    if (!mounted) return;
-    setState(() {
-      _activeFeed = feed;
-      _router = router;
-      _stops = stops;
-      _origin = _pickInitialOrigin(stops);
-      _destination = _pickInitialDestination(stops);
-      _initializing = false;
-      _loading = false;
-      _itineraries = const [];
-    });
-    await _refreshMapOverlays();
-    await _plan();
-  }
-
-  Future<void> _switchFeed(TransitFeed feed) async {
-    if (feed.id == _activeFeed.id) {
-      return;
-    }
-    if (widget.router != null) {
+    if (mounted) {
       setState(() {
         _activeFeed = feed;
+        _initializing = true;
+        _loadError = null;
+        _feedProgress = null;
+        _itineraries = const [];
+        _mapController = null;
+        _styleLoaded = false;
+        _markerSymbols.clear();
+        _routeLines.clear();
       });
+    }
+    try {
+      final router =
+          widget.router ??
+          await openFeedRouter(feed, onProgress: _handleFeedProgress);
+      final stops = await router.stops();
+      if (!mounted) return;
+      setState(() {
+        _activeFeed = feed;
+        _router = router;
+        _stops = stops;
+        _origin = _pickInitialOrigin(stops);
+        _destination = _pickInitialDestination(stops);
+        _initializing = false;
+        _loading = false;
+        _loadError = null;
+        _feedProgress = null;
+        _itineraries = const [];
+      });
+      await _refreshMapOverlays();
+      await _plan();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _router = null;
+        _stops = const [];
+        _origin = null;
+        _destination = null;
+        _initializing = false;
+        _loading = false;
+        _loadError = error.toString();
+        _itineraries = const [];
+      });
+    }
+  }
+
+  void _handleFeedProgress(FeedLoadProgress progress) {
+    if (!mounted) return;
+    setState(() => _feedProgress = progress);
+  }
+
+  Future<void> _openSettings() async {
+    await context.push('/settings');
+    if (!mounted || widget.router != null) {
       return;
     }
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_feedSelectionStorageKey, feed.id);
-    // Tear the map down before swapping in the new feed. The Stack/Map
-    // gets replaced by _LoadingState while we re-open the router, which
-    // disposes the underlying maplibre platform view — keeping the old
-    // controller/symbols around would let _refreshMapOverlays() reach a
-    // dead method channel and surface as MissingPluginException.
-    setState(() {
-      _initializing = true;
-      _itineraries = const [];
-      _mapController = null;
-      _styleLoaded = false;
-      _markerSymbols.clear();
-      _routeLines.clear();
-    });
+    final feed = await _resolveActiveFeed();
+    if (!mounted || feed.id == _activeFeed.id) {
+      return;
+    }
     await _openFeed(feed);
   }
 
@@ -445,8 +466,15 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _initializing
-          ? _LoadingState(feedName: _activeFeed.name)
+      body: _loadError != null
+          ? _LoadErrorState(
+              feedName: _activeFeed.name,
+              message: _loadError!,
+              onRetry: () => _openFeed(_activeFeed),
+              onSettings: () => _openSettings(),
+            )
+          : _initializing
+          ? _LoadingState(feedName: _activeFeed.name, progress: _feedProgress)
           : Stack(
               children: [
                 Positioned.fill(
@@ -477,25 +505,21 @@ class _HomePageState extends State<HomePage> {
                   child: SafeArea(
                     bottom: false,
                     child: _SearchHeader(
-                      feed: _activeFeed,
                       origin: _origin,
                       destination: _destination,
                       onEditOrigin: _editOrigin,
                       onEditDestination: _editDestination,
                       onSwap: _swapEndpoints,
-                      onSettings: () => context.push('/settings'),
+                      onSettings: () => _openSettings(),
                     ),
                   ),
                 ),
                 _ResultsSheet(
-                  feed: _activeFeed,
-                  feeds: kTransitFeeds,
                   itineraries: _itineraries,
                   loading: _loading,
                   modes: _modes,
                   maxTransfers: _maxTransfers,
                   departureTime: _departureTime,
-                  onFeedChanged: _switchFeed,
                   onModeToggled: _setModeEnabled,
                   onMaxTransfersChanged: _setMaxTransfers,
                   onPlan: _plan,
@@ -537,23 +561,118 @@ class _MapAttribution extends StatelessWidget {
 }
 
 class _LoadingState extends StatelessWidget {
-  const _LoadingState({required this.feedName});
+  const _LoadingState({required this.feedName, required this.progress});
 
   final String feedName;
+  final FeedLoadProgress? progress;
 
   @override
   Widget build(BuildContext context) {
+    final progress = this.progress;
+    final value = progress?.fraction;
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const CircularProgressIndicator(),
-          const SizedBox(height: AppSpacing.m),
-          Text(
-            'Loading $feedName…',
-            style: Theme.of(context).textTheme.bodyMedium,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.l),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              LinearProgressIndicator(value: value),
+              const SizedBox(height: AppSpacing.m),
+              Text(
+                'Loading $feedName',
+                style: Theme.of(context).textTheme.titleMedium,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                progress == null ? 'Preparing feed' : _progressText(progress),
+                style: Theme.of(context).textTheme.bodySmall,
+                textAlign: TextAlign.center,
+              ),
+              if (progress?.bytesReceived != null) ...[
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  _byteProgressText(progress!),
+                  style: Theme.of(context).textTheme.labelSmall,
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ],
           ),
-        ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LoadErrorState extends StatelessWidget {
+  const _LoadErrorState({
+    required this.feedName,
+    required this.message,
+    required this.onRetry,
+    required this.onSettings,
+  });
+
+  final String feedName;
+  final String message;
+  final VoidCallback onRetry;
+  final VoidCallback onSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.l),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Icon(
+                  Icons.error_outline,
+                  color: theme.colorScheme.error,
+                  size: 36,
+                ),
+                const SizedBox(height: AppSpacing.m),
+                Text(
+                  'Could not load $feedName',
+                  style: theme.textTheme.titleLarge,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: AppSpacing.s),
+                Text(
+                  message,
+                  style: theme.textTheme.bodySmall,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: AppSpacing.m),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: AppSpacing.s,
+                  runSpacing: AppSpacing.s,
+                  children: [
+                    FilledButton.icon(
+                      onPressed: onRetry,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retry'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: onSettings,
+                      icon: const Icon(Icons.settings_outlined),
+                      label: const Text('Settings'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -561,7 +680,6 @@ class _LoadingState extends StatelessWidget {
 
 class _SearchHeader extends StatelessWidget {
   const _SearchHeader({
-    required this.feed,
     required this.origin,
     required this.destination,
     required this.onEditOrigin,
@@ -570,7 +688,6 @@ class _SearchHeader extends StatelessWidget {
     required this.onSettings,
   });
 
-  final TransitFeed feed;
   final RoutePoint? origin;
   final RoutePoint? destination;
   final VoidCallback onEditOrigin;
@@ -704,14 +821,11 @@ class _EndpointField extends StatelessWidget {
 
 class _ResultsSheet extends StatelessWidget {
   const _ResultsSheet({
-    required this.feed,
-    required this.feeds,
     required this.itineraries,
     required this.loading,
     required this.modes,
     required this.maxTransfers,
     required this.departureTime,
-    required this.onFeedChanged,
     required this.onModeToggled,
     required this.onMaxTransfersChanged,
     required this.onPlan,
@@ -721,14 +835,11 @@ class _ResultsSheet extends StatelessWidget {
     required this.destination,
   });
 
-  final TransitFeed feed;
-  final List<TransitFeed> feeds;
   final List<Itinerary> itineraries;
   final bool loading;
   final Set<TransitMode> modes;
   final int maxTransfers;
   final TimeOfDay? departureTime;
-  final ValueChanged<TransitFeed> onFeedChanged;
   final void Function(TransitMode, bool) onModeToggled;
   final ValueChanged<double> onMaxTransfersChanged;
   final VoidCallback onPlan;
@@ -797,37 +908,6 @@ class _ResultsSheet extends StatelessWidget {
                       label: const Text('Find routes'),
                     ),
                   ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.m,
-                  AppSpacing.s,
-                  AppSpacing.m,
-                  AppSpacing.xs,
-                ),
-                child: DropdownButtonFormField<TransitFeed>(
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Network',
-                    isDense: true,
-                  ),
-                  initialValue: feed,
-                  items: feeds
-                      .map(
-                        (f) => DropdownMenuItem(
-                          value: f,
-                          child: Text(
-                            f.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      )
-                      .toList(growable: false),
-                  onChanged: (f) {
-                    if (f != null) onFeedChanged(f);
-                  },
                 ),
               ),
               Padding(
@@ -1052,6 +1132,45 @@ String _clock(DateTime value) {
   final h = value.hour.toString().padLeft(2, '0');
   final m = value.minute.toString().padLeft(2, '0');
   return '$h:$m';
+}
+
+String _progressText(FeedLoadProgress progress) {
+  final component = progress.componentCount > 1
+      ? ' (${progress.componentIndex}/${progress.componentCount})'
+      : '';
+  final feedName = progress.componentCount > 1 ? ' ${progress.feed.name}' : '';
+  return switch (progress.operation) {
+    FeedLoadOperation.preparing => 'Preparing feed',
+    FeedLoadOperation.checkingCache => 'Checking cache$component$feedName',
+    FeedLoadOperation.copyingBundledFeed =>
+      'Copying bundled feed$component$feedName',
+    FeedLoadOperation.downloadingFeed => 'Downloading feed$component$feedName',
+    FeedLoadOperation.openingRouter => 'Opening route engine',
+    FeedLoadOperation.loadingStops => 'Loading stops',
+  };
+}
+
+String _byteProgressText(FeedLoadProgress progress) {
+  final received = _formatBytes(progress.bytesReceived ?? 0);
+  final total = progress.totalBytes;
+  if (total == null || total <= 0) {
+    return '$received downloaded';
+  }
+  return '$received / ${_formatBytes(total)} downloaded';
+}
+
+String _formatBytes(int bytes) {
+  const units = ['B', 'KB', 'MB', 'GB'];
+  var value = bytes.toDouble();
+  var unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex++;
+  }
+  if (unitIndex == 0) {
+    return '$bytes ${units[unitIndex]}';
+  }
+  return '${value.toStringAsFixed(value >= 10 ? 1 : 2)} ${units[unitIndex]}';
 }
 
 String _hexColor(Color color) {

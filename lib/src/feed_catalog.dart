@@ -172,7 +172,7 @@ const List<TransitFeed> kTransitFeeds = [
     sourceUrl:
         'https://catalog-data.city.kanazawa.ishikawa.jp/dataset/'
         '89d93f28-38b4-4971-9988-2ff2d3227f56/resource/'
-        '50049b19-fe9f-4ca1-9ea9-9d0a24141644/download/172103_bus.zip',
+        '50049b19-fe9f-4c1f-a9ea-9d0a24141644/download/172103_bus.zip',
     localFileName: '172103_bus.zip',
     attribution: 'Transit data © Hakusan City (白山市), CC-BY 4.0.',
     centerLatitude: 36.2581,

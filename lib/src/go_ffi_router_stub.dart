@@ -1,7 +1,6 @@
 // Web fallback for the Go-FFI router. The web build cannot load native
-// libraries, so we fall back to the in-Dart mock implementation. The user
-// sees the existing Bern mock stops; the About screen notes the real
-// feed only works on the mobile/desktop targets.
+// libraries, so web keeps the in-Dart mock implementation.
+import 'feed_load_progress.dart';
 import 'local_router.dart';
 import 'feed_catalog.dart';
 
@@ -11,9 +10,13 @@ const bool goFfiSupported = false;
 
 /// Returns a [LocalTransitRouter]. On web this is always a
 /// [MockTransitRouter].
-Future<LocalTransitRouter> openToeiRouter() async {
+Future<LocalTransitRouter> openToeiRouter({
+  void Function(FeedLoadProgress progress)? onProgress,
+}) async {
   return const MockTransitRouter();
 }
 
-Future<LocalTransitRouter> openFeedRouter(TransitFeed feed) async =>
-    const MockTransitRouter();
+Future<LocalTransitRouter> openFeedRouter(
+  TransitFeed feed, {
+  void Function(FeedLoadProgress progress)? onProgress,
+}) async => const MockTransitRouter();

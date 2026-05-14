@@ -19,32 +19,64 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
 
 import 'app_log.dart';
+import 'feed_load_progress.dart';
 import 'local_router.dart';
 import 'models.dart';
 import 'feed_catalog.dart';
 
 const String _kFeedCacheDir = 'gtfs';
 
-Future<LocalTransitRouter> openToeiRouter() async =>
-    openFeedRouter(findFeedById(kDefaultFeedId)!);
+Future<LocalTransitRouter> openToeiRouter({
+  void Function(FeedLoadProgress progress)? onProgress,
+}) async =>
+    openFeedRouter(findFeedById(kDefaultFeedId)!, onProgress: onProgress);
 
-Future<LocalTransitRouter> openFeedRouter(TransitFeed feed) async {
+Future<LocalTransitRouter> openFeedRouter(
+  TransitFeed feed, {
+  void Function(FeedLoadProgress progress)? onProgress,
+}) async {
   if (!goFfiSupported) {
-    return const MockTransitRouter();
+    throw UnsupportedError(
+      'Go FFI router is not supported on ${Platform.operatingSystem}',
+    );
   }
   try {
-    final stagedFeeds = await _stageFeeds(feed);
+    onProgress?.call(
+      FeedLoadProgress(
+        feed: feed,
+        operation: FeedLoadOperation.preparing,
+        componentIndex: 1,
+        componentCount: 1,
+      ),
+    );
+    final stagedFeeds = await _stageFeeds(feed, onProgress: onProgress);
+    onProgress?.call(
+      FeedLoadProgress(
+        feed: feed,
+        operation: FeedLoadOperation.openingRouter,
+        componentIndex: stagedFeeds.length,
+        componentCount: stagedFeeds.length,
+      ),
+    );
     final native = _NativeBindings.instance;
     final handle = native.open(stagedFeeds);
+    onProgress?.call(
+      FeedLoadProgress(
+        feed: feed,
+        operation: FeedLoadOperation.loadingStops,
+        componentIndex: stagedFeeds.length,
+        componentCount: stagedFeeds.length,
+      ),
+    );
     final stops = native.stops(handle);
     return _GoFfiRouter._(native: native, handle: handle, stops: stops);
   } catch (error, stack) {
     AppLogBuffer.instance.error(
       error,
       stackTrace: stack,
-      context: 'Failed to open ${feed.id} via FFI; falling back to mock',
+      context: 'Failed to open ${feed.id} via FFI',
     );
-    return const MockTransitRouter();
+    rethrow;
   }
 }
 
@@ -55,29 +87,66 @@ bool get goFfiSupported =>
     Platform.isMacOS ||
     Platform.isWindows;
 
-Future<List<_StagedFeed>> _stageFeeds(TransitFeed feed) async {
+Future<List<_StagedFeed>> _stageFeeds(
+  TransitFeed feed, {
+  void Function(FeedLoadProgress progress)? onProgress,
+}) async {
   final components = componentFeedsFor(feed);
   if (components.isEmpty) {
     throw StateError('collection feed ${feed.id} has no known components');
   }
   if (components.length == 1 && !feed.isCollection) {
-    final path = await _stageFeed(components.single);
+    final path = await _stageFeed(
+      components.single,
+      componentIndex: 1,
+      componentCount: 1,
+      onProgress: onProgress,
+    );
     return [_StagedFeed(path: path)];
   }
 
   final staged = <_StagedFeed>[];
-  for (final component in components) {
-    final path = await _stageFeed(component);
+  for (var i = 0; i < components.length; i++) {
+    final component = components[i];
+    final path = await _stageFeed(
+      component,
+      componentIndex: i + 1,
+      componentCount: components.length,
+      onProgress: onProgress,
+    );
     staged.add(_StagedFeed(prefix: component.id, path: path));
   }
   return staged;
 }
 
 /// Stages a single feed into app cache.
-Future<String> _stageFeed(TransitFeed feed) async {
+Future<String> _stageFeed(
+  TransitFeed feed, {
+  required int componentIndex,
+  required int componentCount,
+  void Function(FeedLoadProgress progress)? onProgress,
+}) async {
   if (feed.isCollection) {
     throw StateError('collection feed ${feed.id} must be expanded first');
   }
+  void report(
+    FeedLoadOperation operation, {
+    int? bytesReceived,
+    int? totalBytes,
+  }) {
+    onProgress?.call(
+      FeedLoadProgress(
+        feed: feed,
+        operation: operation,
+        componentIndex: componentIndex,
+        componentCount: componentCount,
+        bytesReceived: bytesReceived,
+        totalBytes: totalBytes,
+      ),
+    );
+  }
+
+  report(FeedLoadOperation.checkingCache);
   final supportDir = await getApplicationSupportDirectory();
   final feedDir = Directory('${supportDir.path}/$_kFeedCacheDir/${feed.id}');
   if (!feedDir.existsSync()) {
@@ -99,14 +168,24 @@ Future<String> _stageFeed(TransitFeed feed) async {
   }
 
   if (isBundled) {
-    await _cacheBundledFeed(feed, dst, stamp);
+    await _cacheBundledFeed(feed, dst, stamp, onProgress: report);
   } else {
-    await _downloadFeed(feed, dst, stamp);
+    await _downloadFeed(feed, dst, stamp, onProgress: report);
   }
   return dst.path;
 }
 
-Future<void> _cacheBundledFeed(TransitFeed feed, File dst, File stamp) async {
+Future<void> _cacheBundledFeed(
+  TransitFeed feed,
+  File dst,
+  File stamp, {
+  required void Function(
+    FeedLoadOperation operation, {
+    int? bytesReceived,
+    int? totalBytes,
+  })
+  onProgress,
+}) async {
   final assetPath = feed.bundledAssetPath;
   if (assetPath == null) {
     throw StateError('missing bundled asset path for ${feed.id}');
@@ -117,6 +196,11 @@ Future<void> _cacheBundledFeed(TransitFeed feed, File dst, File stamp) async {
     assetData.lengthInBytes,
   );
   final expected = sha256.convert(bytes).toString();
+  onProgress(
+    FeedLoadOperation.copyingBundledFeed,
+    bytesReceived: bytes.length,
+    totalBytes: bytes.length,
+  );
   dst.writeAsBytesSync(bytes, flush: true);
   stamp.writeAsStringSync(_cacheStampWithHash(feed, expected));
 }
@@ -135,7 +219,17 @@ Future<String> _bundledFeedStamp(TransitFeed feed) async {
   return _cacheStampWithHash(feed, expected);
 }
 
-Future<void> _downloadFeed(TransitFeed feed, File dst, File stamp) async {
+Future<void> _downloadFeed(
+  TransitFeed feed,
+  File dst,
+  File stamp, {
+  required void Function(
+    FeedLoadOperation operation, {
+    int? bytesReceived,
+    int? totalBytes,
+  })
+  onProgress,
+}) async {
   final client = HttpClient();
   try {
     final request = await client.getUrl(Uri.parse(feed.sourceUrl));
@@ -148,8 +242,32 @@ Future<void> _downloadFeed(TransitFeed feed, File dst, File stamp) async {
     }
     final tmp = File('${dst.path}.tmp');
     final sink = tmp.openWrite();
-    await result.pipe(sink);
-    await sink.close();
+    final totalBytes = result.contentLength >= 0 ? result.contentLength : null;
+    var received = 0;
+    onProgress(
+      FeedLoadOperation.downloadingFeed,
+      bytesReceived: received,
+      totalBytes: totalBytes,
+    );
+    try {
+      await for (final chunk in result) {
+        received += chunk.length;
+        sink.add(chunk);
+        onProgress(
+          FeedLoadOperation.downloadingFeed,
+          bytesReceived: received,
+          totalBytes: totalBytes,
+        );
+      }
+      await sink.flush();
+      await sink.close();
+    } catch (_) {
+      await sink.close();
+      if (tmp.existsSync()) {
+        tmp.deleteSync();
+      }
+      rethrow;
+    }
     await tmp.rename(dst.path);
     stamp.writeAsStringSync(_cacheStamp(feed));
   } finally {
