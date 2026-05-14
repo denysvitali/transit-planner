@@ -128,7 +128,8 @@ class _NativeBindings {
       respPtr = fn(reqPtr);
       final raw = respPtr.toDartString();
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
-      if (decoded['error'] is String && (decoded['error'] as String).isNotEmpty) {
+      if (decoded['error'] is String &&
+          (decoded['error'] as String).isNotEmpty) {
         throw FfiRouterException(decoded['error'] as String);
       }
       return decoded;
@@ -206,6 +207,9 @@ TransitStop _stopFromJson(Map<String, dynamic> json) => TransitStop(
 class FfiRouterException implements Exception {
   FfiRouterException(this.message);
   final String message;
+
+  bool get isDestinationUnreachable => message == 'destination unreachable';
+
   @override
   String toString() => 'FfiRouterException: $message';
 }
@@ -233,13 +237,21 @@ class _GoFfiRouter implements LocalTransitRouter {
     final secondsFromMidnight = request.departure.hour * 3600 +
         request.departure.minute * 60 +
         request.departure.second;
-    final response = _native.route({
-      'handle': _handle,
-      'from': request.origin.id,
-      'to': request.destination.id,
-      'departure': secondsFromMidnight,
-      'maxTransfers': request.maxTransfers,
-    });
+    final Map<String, dynamic> response;
+    try {
+      response = _native.route({
+        'handle': _handle,
+        'from': request.origin.id,
+        'to': request.destination.id,
+        'departure': secondsFromMidnight,
+        'maxTransfers': request.maxTransfers,
+      });
+    } on FfiRouterException catch (error) {
+      if (error.isDestinationUnreachable) {
+        return const [];
+      }
+      rethrow;
+    }
     final legsJson = (response['legs'] as List<dynamic>?) ?? const [];
     if (legsJson.isEmpty) {
       return const [];

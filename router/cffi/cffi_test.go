@@ -133,6 +133,52 @@ func TestRouteJSONFeedZipToei(t *testing.T) {
 	}
 }
 
+func TestRouteJSONFeedZipToeiCrossLineUsesSyntheticInterchange(t *testing.T) {
+	const zipPath = "../../assets/sample_toei_train/Toei-Train-GTFS.zip"
+	if _, err := os.Stat(zipPath); err != nil {
+		t.Skipf("vendored Toei zip missing: %v", err)
+	}
+
+	// The Toei feed models interchanges as separate stop IDs with matching
+	// names and omits transfers.txt. This route changes from Asakusa Line
+	// Mita (108) to Mita Line Mita (204) before continuing to Hibiya (208).
+	req := routeRequest{
+		FeedZip:      zipPath,
+		From:         "101",
+		To:           "208",
+		Departure:    8 * 3600,
+		MaxTransfers: 2,
+	}
+	reqBytes, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	respJSON := RouteJSON(string(reqBytes))
+
+	var maybeErr errorResponse
+	if err := json.Unmarshal([]byte(respJSON), &maybeErr); err == nil && maybeErr.Error != "" {
+		t.Fatalf("Toei cross-line route returned error: %s", maybeErr.Error)
+	}
+	var resp routeResponse
+	if err := json.Unmarshal([]byte(respJSON), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v (raw=%s)", err, respJSON)
+	}
+	if len(resp.Legs) < 3 {
+		t.Fatalf("legs = %d, want at least 3", len(resp.Legs))
+	}
+	foundWalk := false
+	for _, leg := range resp.Legs {
+		if leg.Mode == "walk" && leg.FromStop.Name == leg.ToStop.Name {
+			foundWalk = true
+			break
+		}
+	}
+	if !foundWalk {
+		t.Fatalf("expected same-station walk leg, got %#v", resp.Legs)
+	}
+}
+
 func TestRouteJSONMissingFeed(t *testing.T) {
 	req := routeRequest{
 		FeedDir: filepath.Join(t.TempDir(), "does-not-exist"),

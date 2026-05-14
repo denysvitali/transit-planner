@@ -48,6 +48,8 @@ type Transfer struct {
 	Duration   int
 }
 
+const sameStationTransferDuration = 120
+
 type Feed struct {
 	Stops     map[string]Stop
 	Routes    map[string]Route
@@ -99,6 +101,7 @@ func loadFeed(fsys fs.FS) (*Feed, error) {
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
+	transfers = appendSameStationTransfers(stops, transfers)
 	return &Feed{
 		Stops:     stops,
 		Routes:    routes,
@@ -222,6 +225,44 @@ func loadTransfers(fsys fs.FS) ([]Transfer, error) {
 		})
 	}
 	return transfers, nil
+}
+
+func appendSameStationTransfers(stops map[string]Stop, transfers []Transfer) []Transfer {
+	byName := map[string][]Stop{}
+	for _, stop := range stops {
+		if stop.Name == "" {
+			continue
+		}
+		byName[stop.Name] = append(byName[stop.Name], stop)
+	}
+
+	seen := map[string]bool{}
+	for _, transfer := range transfers {
+		seen[transfer.FromStopID+"\x00"+transfer.ToStopID] = true
+	}
+	for _, namedStops := range byName {
+		if len(namedStops) < 2 {
+			continue
+		}
+		for _, from := range namedStops {
+			for _, to := range namedStops {
+				if from.ID == to.ID {
+					continue
+				}
+				key := from.ID + "\x00" + to.ID
+				if seen[key] {
+					continue
+				}
+				transfers = append(transfers, Transfer{
+					FromStopID: from.ID,
+					ToStopID:   to.ID,
+					Duration:   sameStationTransferDuration,
+				})
+				seen[key] = true
+			}
+		}
+	}
+	return transfers
 }
 
 func readCSV(fsys fs.FS, name string) ([]map[string]string, error) {
