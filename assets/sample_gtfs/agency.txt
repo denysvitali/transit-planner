@@ -1,0 +1,2 @@
+agency_id,agency_name,agency_url,agency_timezone,agency_lang
+TP_SAMPLE,Transit Planner Sample Agency,https://example.org/transit-planner,Europe/Zurich,de

@@ -1,0 +1,11 @@
+stop_id,stop_name,stop_lat,stop_lon
+S01,Bern Bahnhof,46.948900,7.439900
+S02,Bern Baerenplatz,46.947700,7.444100
+S03,Bern Zytglogge,46.947900,7.447600
+S04,Bern Casinoplatz,46.946800,7.447700
+S05,Bern Helvetiaplatz,46.944400,7.449600
+S06,Bern Bundesplatz,46.946600,7.444200
+S07,Bern Hirschengraben,46.946900,7.439100
+S08,Bern Lorraine,46.952100,7.442100
+S09,Bern Breitenrain,46.955800,7.448000
+S10,Bern Wankdorf,46.963300,7.464000

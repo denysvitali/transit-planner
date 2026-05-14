@@ -1,0 +1,4 @@
+route_id,agency_id,route_short_name,route_long_name,route_type
+R_TRAM6,TP_SAMPLE,6,Lorraine - Helvetiaplatz,0
+R_TRAM9,TP_SAMPLE,9,Hirschengraben - Helvetiaplatz,0
+R_BUS10,TP_SAMPLE,10,Bahnhof - Wankdorf,3

@@ -62,3 +62,20 @@ nix run nixpkgs#flutter -- test
 - Add local stop search and origin/destination snapping.
 - Add OSM pedestrian routing for realistic first/last-mile walking.
 - Extend the Go router to McRAPTOR and return Pareto-optimal alternatives.
+
+## Sample data
+
+A tiny synthetic GTFS feed ships under [`assets/sample_gtfs/`](assets/sample_gtfs/)
+for local development and testing. It contains ten stops around Bern central
+station, three routes (two trams and a bus), three trips per route running
+between 07:00 and 08:22 on weekdays, and a handful of walking transfers.
+
+Use it from the Go side via:
+
+```go
+feed, err := router.LoadGTFS("assets/sample_gtfs")
+```
+
+See [`assets/sample_gtfs/README.md`](assets/sample_gtfs/README.md) for the
+feed layout, and [`docs/architecture.md`](docs/architecture.md) for how the
+data, the Go routing core, and the Flutter UI fit together.
