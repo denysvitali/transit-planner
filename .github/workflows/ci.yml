@@ -57,6 +57,16 @@ jobs:
       - name: Test
         run: go test ./...
 
+      - name: Build c-shared library for Flutter FFI
+        run: |
+          mkdir -p build
+          CGO_ENABLED=1 go build \
+            -buildmode=c-shared \
+            -o build/libtransit_planner.so \
+            ./cmd/libtransitplanner
+          test -f build/libtransit_planner.h
+          nm -D build/libtransit_planner.so | grep -E '\bTP_(Route|Free)\b'
+
   build-android:
     name: Build Android Release APK
     runs-on: ubuntu-latest
@@ -87,6 +97,14 @@ jobs:
           channel: stable
           flutter-version: 3.41.9
           cache: true
+
+      - name: Install icon generation deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends librsvg2-bin python3-pil
+
+      - name: Generate app icons from SVG
+        run: python3 tool/generate_app_icon.py
 
       - name: Get dependencies
         run: flutter pub get

@@ -55,6 +55,19 @@ nix run nixpkgs#flutter -- analyze --no-fatal-infos --no-fatal-warnings
 nix run nixpkgs#flutter -- test
 ```
 
+### App icons
+
+The source of truth is [`assets/icon/app_icon.svg`](assets/icon/app_icon.svg).
+The platform-specific PNGs (Android mipmaps, iOS AppIcon set, web/PWA icons,
+favicon) are git-ignored and regenerated from the SVG with:
+
+```sh
+python3 tool/generate_app_icon.py
+```
+
+The script needs `rsvg-convert` (Debian/Ubuntu: `librsvg2-bin`) and Pillow
+(`python3-pil`). CI runs it automatically before `flutter build`.
+
 ## Next steps
 
 - Replace the Dart mock router with FFI or platform-channel calls into Go.
