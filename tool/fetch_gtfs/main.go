@@ -9,7 +9,9 @@
 //
 //	go run ./tool/fetch_gtfs                       # default: toei-bus
 //	go run ./tool/fetch_gtfs -feed toei-train
+//	go run ./tool/fetch_gtfs -feed kanazawa-flatbus
 //	go run ./tool/fetch_gtfs -feed toei-bus -out assets/real_gtfs/toei_bus
+//	go run ./tool/fetch_gtfs -feed kanazawa-flatbus -out assets/real_gtfs/kanazawa_flatbus
 //
 // The downloaded zip is written to <out>/<feed>.zip and a MANIFEST.json with
 // the source URL, fetch timestamp, and SHA-256 sits alongside it for
@@ -54,6 +56,27 @@ var feeds = map[string]feedSpec{
 		license:     "CC-BY-4.0",
 		description: "Toei subway lines (浅草線, 三田線, 新宿線, 大江戸線, 日暮里舎人, 都電荒川), via ODPT public bucket",
 	},
+	"kanazawa-flatbus": {
+		name:        "kanazawa-flatbus",
+		url:         "https://catalog-data.city.kanazawa.ishikawa.jp/dataset/1196beb4-f9f9-463c-9723-5b38d8127425/resource/9636cac5-1449-4656-893b-ec98d834eb23/download/flatbus20260401.zip",
+		publisher:   "Kanazawa City, Ishikawa",
+		license:     "CC-BY-4.0",
+		description: "Kanazawa municipal bus network GTFS, via Kanazawa Open Data Catalog",
+	},
+	"kanazawa-hakusan-meguru": {
+		name:        "kanazawa-hakusan-meguru",
+		url:         "https://catalog-data.city.kanazawa.ishikawa.jp/dataset/89d93f28-38b4-4971-9988-2ff2d3227f56/resource/50049b19-fe9f-4ca1-9ea9-9d0a24141644/download/172103_bus.zip",
+		publisher:   "Hakusan City, Ishikawa",
+		license:     "CC-BY-4.0",
+		description: "Hakusan city bus network GTFS, via Kanazawa Open Data Catalog",
+	},
+	"kanazawa-tsubata-bus": {
+		name:        "kanazawa-tsubata-bus",
+		url:         "https://catalog-data.city.kanazawa.ishikawa.jp/dataset/8cd7f0dc-aab0-4bf4-a09d-c1d79faf4512/resource/9565f9b7-3bf7-4937-bee5-789d2aa4bf8a/download/gtfs-jp_tsubata.zip",
+		publisher:   "Tsubata Town, Ishikawa",
+		license:     "CC-BY-4.0",
+		description: "Tsubata bus GTFS (GTFS-JP), via Kanazawa Open Data Catalog",
+	},
 }
 
 type manifest struct {
@@ -69,14 +92,20 @@ type manifest struct {
 
 func main() {
 	var (
-		feedName = flag.String("feed", "toei-bus", "feed to fetch (toei-bus, toei-train)")
+		feedName = flag.String("feed", "toei-bus", "feed to fetch (toei-bus, toei-train, kanazawa-flatbus, kanazawa-hakusan-meguru, kanazawa-tsubata-bus)")
 		outDir   = flag.String("out", "", "output directory (default: assets/real_gtfs/<feed>)")
 		list     = flag.Bool("list", false, "list known feeds and exit")
 	)
 	flag.Parse()
 
 	if *list {
-		for _, key := range []string{"toei-bus", "toei-train"} {
+		for _, key := range []string{
+			"toei-bus",
+			"toei-train",
+			"kanazawa-flatbus",
+			"kanazawa-hakusan-meguru",
+			"kanazawa-tsubata-bus",
+		} {
 			f := feeds[key]
 			fmt.Printf("%s  %s  (%s, %s)\n    %s\n", f.name, f.url, f.license, f.publisher, f.description)
 		}

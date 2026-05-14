@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_log.dart';
+import 'feed_catalog.dart';
 import 'theme.dart';
 
 class SettingsPage extends StatelessWidget {
@@ -77,6 +79,8 @@ class SettingsPage extends StatelessWidget {
               },
             ),
             const SizedBox(height: AppSpacing.l),
+            const _FeedSection(),
+            const SizedBox(height: AppSpacing.l),
             const _AboutSection(),
           ],
         ),
@@ -85,16 +89,111 @@ class SettingsPage extends StatelessWidget {
   }
 }
 
-/// About / attributions section. CC-BY 4.0 requires us to surface the Toei
-/// attribution string anywhere Toei data is rendered; the canonical wording
-/// lives in LICENSES_THIRD_PARTY.md at the repo root.
+class _FeedSection extends StatefulWidget {
+  const _FeedSection();
+
+  @override
+  State<_FeedSection> createState() => _FeedSectionState();
+}
+
+class _FeedSectionState extends State<_FeedSection> {
+  static const _feedSelectionStorageKey = 'selected_feed_id';
+
+  String? _selectedFeedId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSelectedFeed();
+  }
+
+  Future<void> _loadSelectedFeed() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _selectedFeedId = prefs.getString(_feedSelectionStorageKey));
+  }
+
+  Future<void> _setActiveFeed(String feedId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_feedSelectionStorageKey, feedId);
+    if (!mounted) return;
+    setState(() => _selectedFeedId = feedId);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = findFeedById(_selectedFeedId ?? kDefaultFeedId);
+    final primaryColor = Theme.of(context).colorScheme.primary;
+    final mutedColor = Theme.of(context).textTheme.bodySmall?.color;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.m),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Transit feeds',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: AppSpacing.s),
+            for (final feed in kTransitFeeds)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.s),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    InkWell(
+                      onTap: () async => _setActiveFeed(feed.id),
+                      child: Row(
+                        children: [
+                          Icon(
+                            feed.id == selected?.id
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_off,
+                            size: 18,
+                            color: feed.id == selected?.id
+                                ? primaryColor
+                                : mutedColor,
+                          ),
+                          const SizedBox(width: AppSpacing.s),
+                          Expanded(
+                            child: Text(
+                              feed.name,
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      feed.description,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    if (feed.id == selected?.id)
+                      Text(
+                        'Set as default for next launch',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                      )
+                  ],
+                ),
+              ),
+            Text(
+              'Default for next launch: ${selected?.name ?? kDefaultFeedId}',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// About / attributions section.
 class _AboutSection extends StatelessWidget {
   const _AboutSection();
-
-  static const _toeiAttribution =
-      'Transit data © 東京都交通局 (Tokyo Metropolitan Bureau of '
-      'Transportation), CC-BY 4.0, via the Public Transportation Open Data '
-      'Center (ODPT).';
 
   @override
   Widget build(BuildContext context) {
@@ -111,11 +210,34 @@ class _AboutSection extends StatelessWidget {
         const SizedBox(height: AppSpacing.s),
         Text('Transit data sources', style: theme.textTheme.titleMedium),
         const SizedBox(height: AppSpacing.xs),
-        SelectableText(
-          _toeiAttribution,
-          style: theme.textTheme.bodyMedium,
-        ),
+        ...kTransitFeeds
+            .map(
+              (feed) => Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.s),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      feed.name,
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    SelectableText(
+                      feed.attribution,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            )
+            .toList(growable: false),
         const SizedBox(height: AppSpacing.xs),
+        Text(
+          'Licences and terms are listed in the same order as the catalog.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
         Text(
           'See LICENSES_THIRD_PARTY.md in the source tree for the full list '
           'of bundled and downloaded datasets and their licences.',

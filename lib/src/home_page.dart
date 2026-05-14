@@ -1,20 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_log.dart';
 import 'go_ffi_router.dart';
 import 'local_router.dart';
 import 'models.dart';
+import 'feed_catalog.dart';
 import 'stop_search.dart';
 import 'theme.dart';
 
 const _fallbackStyle = 'https://demotiles.maplibre.org/style.json';
 
-// Tokyo Station — sensible default focal point now that the bundled feed
-// is Toei. Sits between every Toei subway line.
-const _tokyoCenter = LatLng(35.681236, 139.767125);
-const _bernCenter = LatLng(46.948, 7.439);
+const _feedSelectionStorageKey = 'selected_feed_id';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key, this.router});
@@ -31,6 +30,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   LocalTransitRouter? _router;
+  TransitFeed _activeFeed = findFeedById(kDefaultFeedId)!;
   List<TransitStop> _stops = const [];
   TransitStop? _origin;
   TransitStop? _destination;
@@ -53,22 +53,57 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _bootstrap() async {
-    final router = widget.router ?? await openToeiRouter();
+    final feed = await _resolveActiveFeed();
+    await _openFeed(feed);
+  }
+
+  Future<TransitFeed> _resolveActiveFeed() async {
+    if (widget.router != null) {
+      return _activeFeed;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getString(_feedSelectionStorageKey);
+    return findFeedById(stored ?? kDefaultFeedId) ?? findFeedById(kDefaultFeedId)!;
+  }
+
+  Future<void> _openFeed(TransitFeed feed) async {
+    final router = widget.router ?? await openFeedRouter(feed);
     final stops = await router.stops();
     if (!mounted) return;
     setState(() {
+      _activeFeed = feed;
       _router = router;
       _stops = stops;
       _origin = _pickInitialOrigin(stops);
       _destination = _pickInitialDestination(stops);
       _initializing = false;
+      _loading = false;
+      _itineraries = const [];
     });
     await _plan();
   }
 
-  /// Picks a sensible default origin. For the Toei feed we want a
-  /// recognisable starting station; if the feed is the Bern mock we keep
-  /// the existing Wankdorf default.
+  Future<void> _switchFeed(TransitFeed feed) async {
+    if (feed.id == _activeFeed.id) {
+      return;
+    }
+    if (widget.router != null) {
+      setState(() {
+        _activeFeed = feed;
+      });
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_feedSelectionStorageKey, feed.id);
+    setState(() {
+      _initializing = true;
+      _itineraries = const [];
+    });
+    await _openFeed(feed);
+  }
+
+  /// Picks a sensible default origin. For Tokyo feeds the station IDs are
+  /// tuned to the Toei feeds; otherwise fallback to the first loaded stop.
   TransitStop _pickInitialOrigin(List<TransitStop> stops) {
     if (stops.isEmpty) {
       return const TransitStop(
@@ -105,16 +140,6 @@ class _HomePageState extends State<HomePage> {
     return stops.length > 1 ? stops[stops.length ~/ 2] : stops.first;
   }
 
-  bool get _isTokyoFeed {
-    final first = _stops.isNotEmpty ? _stops.first : null;
-    if (first == null) return false;
-    // Treat anything inside a coarse Japan bounding box as the Toei feed.
-    return first.latitude > 30 &&
-        first.latitude < 46 &&
-        first.longitude > 128 &&
-        first.longitude < 146;
-  }
-
   void _setOrigin(TransitStop stop) {
     setState(() => _origin = stop);
   }
@@ -145,9 +170,10 @@ class _HomePageState extends State<HomePage> {
     );
     try {
       final itineraries = await router.route(request);
+      final filtered = _filterByModes(itineraries);
       if (!mounted) return;
       setState(() {
-        _itineraries = itineraries;
+        _itineraries = filtered;
         _loading = false;
       });
     } catch (error, stackTrace) {
@@ -172,9 +198,23 @@ class _HomePageState extends State<HomePage> {
   /// initial plan, anchor to a fixed in-service moment so the home page
   /// always has something to show.
   DateTime _earliestDepartureForFeed() {
-    if (!_isTokyoFeed) return DateTime.now();
+    final overrideHour = _activeFeed.defaultDepartureHour;
+    if (overrideHour == null) return DateTime.now();
     final now = DateTime.now();
-    return DateTime(now.year, now.month, now.day, 8, 0);
+    return DateTime(now.year, now.month, now.day, overrideHour, 0);
+  }
+
+  List<Itinerary> _filterByModes(List<Itinerary> itineraries) {
+    return itineraries.where((itinerary) {
+      if (_modes.isEmpty) return false;
+      for (final leg in itinerary.legs) {
+        if (leg.mode == TransitMode.walk) continue;
+        if (!_modes.contains(leg.mode)) {
+          return false;
+        }
+      }
+      return true;
+    }).toList(growable: false);
   }
 
   void _setMaxTransfers(double value) {
@@ -196,7 +236,7 @@ class _HomePageState extends State<HomePage> {
     final wide = MediaQuery.sizeOf(context).width >= 860;
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isTokyoFeed ? 'Transit Planner — Tokyo' : 'Transit Planner'),
+        title: Text(_activeFeed.name),
         actions: [
           IconButton(
             tooltip: 'Settings',
@@ -212,7 +252,7 @@ class _HomePageState extends State<HomePage> {
       ),
       body: SafeArea(
         child: _initializing
-            ? const _LoadingState()
+            ? _LoadingState(feedName: _activeFeed.name)
             : wide
                 ? Row(
                     children: [
@@ -231,11 +271,16 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  LatLng get _mapCenter => _isTokyoFeed ? _tokyoCenter : _bernCenter;
+  LatLng get _mapCenter => LatLng(
+        _activeFeed.centerLatitude,
+        _activeFeed.centerLongitude,
+      );
 }
 
 class _LoadingState extends StatelessWidget {
-  const _LoadingState();
+  const _LoadingState({required this.feedName});
+
+  final String feedName;
 
   @override
   Widget build(BuildContext context) {
@@ -246,7 +291,7 @@ class _LoadingState extends StatelessWidget {
           const CircularProgressIndicator(),
           const SizedBox(height: AppSpacing.m),
           Text(
-            'Loading Toei GTFS…',
+            'Loading $feedName…',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
         ],
@@ -275,6 +320,16 @@ class _PlannerPanel extends StatelessWidget {
                 Text(
                   'Plan a trip',
                   style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: AppSpacing.s),
+                _FeedSelector(
+                  selectedFeed: state._activeFeed,
+                  onChanged: state._switchFeed,
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  state._activeFeed.description,
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: AppSpacing.m),
                 StopPickerField(
@@ -433,53 +488,88 @@ class _ItineraryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.m),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${_clock(itinerary.departure)} - ${_clock(itinerary.arrival)}',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                Text('${itinerary.duration.inMinutes} min'),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              '${itinerary.transfers} transfer${itinerary.transfers == 1 ? '' : 's'} '
-              '• ${itinerary.walking.inMinutes} min walk',
-              style: theme.textTheme.bodySmall,
-            ),
-            const Divider(height: AppSpacing.l),
-            for (final leg in itinerary.legs)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.s),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(_modeIcon(leg.mode), size: 20),
-                    const SizedBox(width: AppSpacing.s),
-                    Expanded(
-                      child: Text(
-                        '${leg.routeName ?? _modeLabel(leg.mode)} '
-                        '${leg.from.name} -> ${leg.to.name}',
+    return InkWell(
+      onTap: () => context.push('/itinerary', extra: itinerary),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.m),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${_clock(itinerary.departure)} - ${_clock(itinerary.arrival)}',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
-                    Text('${leg.duration.inMinutes} min'),
-                  ],
-                ),
+                  ),
+                  Text('${itinerary.duration.inMinutes} min'),
+                ],
               ),
-          ],
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                '${itinerary.transfers} transfer${itinerary.transfers == 1 ? '' : 's'} '
+                '• ${itinerary.walking.inMinutes} min walk',
+                style: theme.textTheme.bodySmall,
+              ),
+              const Divider(height: AppSpacing.l),
+              for (final leg in itinerary.legs)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.s),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(_modeIcon(leg.mode), size: 20),
+                      const SizedBox(width: AppSpacing.s),
+                      Expanded(
+                        child: Text(
+                          '${leg.routeName ?? _modeLabel(leg.mode)} '
+                          '${leg.from.name} -> ${leg.to.name}',
+                        ),
+                      ),
+                      Text('${leg.duration.inMinutes} min'),
+                    ],
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+class _FeedSelector extends StatelessWidget {
+  const _FeedSelector({
+    required this.selectedFeed,
+    required this.onChanged,
+  });
+
+  final TransitFeed selectedFeed;
+  final ValueChanged<TransitFeed> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<TransitFeed>(
+      isExpanded: true,
+      decoration: const InputDecoration(labelText: 'Feed'),
+      value: selectedFeed,
+      items: kTransitFeeds
+          .map(
+            (feed) => DropdownMenuItem(
+              value: feed,
+              child: Text(feed.name),
+            ),
+          )
+          .toList(growable: false),
+      onChanged: (feed) {
+        if (feed != null) {
+          onChanged(feed);
+        }
+      },
     );
   }
 }

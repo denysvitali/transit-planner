@@ -46,6 +46,7 @@ class ItineraryLeg {
     required this.arrival,
     this.routeName,
     this.tripId,
+    this.routeType,
   });
 
   final TransitMode mode;
@@ -55,6 +56,7 @@ class ItineraryLeg {
   final DateTime arrival;
   final String? routeName;
   final String? tripId;
+  final int? routeType;
 
   Duration get duration => arrival.difference(departure);
 }

@@ -6,9 +6,9 @@
 // import barrel in go_ffi_router.dart):
 //   - bool   goFfiSupported  — true when the current platform can load the
 //                              native library.
-//   - Future<LocalTransitRouter> openToeiRouter() — stages the bundled
-//     Toei GTFS zip on disk, opens it through the FFI, and returns a
-//     router whose `route` / `stops` calls go through the Go engine.
+//   - Future<LocalTransitRouter> openToeiRouter() — stages the selected feed on
+//     disk, opens it through the FFI, and returns a router whose `route` /
+//     `stops` calls go through the Go engine.
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
@@ -21,30 +21,19 @@ import 'package:path_provider/path_provider.dart';
 import 'app_log.dart';
 import 'local_router.dart';
 import 'models.dart';
+import 'feed_catalog.dart';
 
-const String _kFeedAssetPath =
-    'assets/sample_toei_train/Toei-Train-GTFS.zip';
-const String _kFeedBasename = 'Toei-Train-GTFS.zip';
+const String _kFeedCacheDir = 'gtfs';
 
-bool get goFfiSupported =>
-    Platform.isAndroid ||
-    Platform.isIOS ||
-    Platform.isLinux ||
-    Platform.isMacOS ||
-    Platform.isWindows;
+Future<LocalTransitRouter> openToeiRouter() async =>
+    openFeedRouter(findFeedById(kDefaultFeedId)!);
 
-/// Stages the bundled Toei GTFS zip into the app support directory and
-/// opens it through the Go FFI surface. Returns a long-lived router whose
-/// underlying feed handle stays alive for the lifetime of the process.
-///
-/// Falls back to [MockTransitRouter] if anything along the way fails — the
-/// UI should always remain usable even when the FFI is unavailable.
-Future<LocalTransitRouter> openToeiRouter() async {
+Future<LocalTransitRouter> openFeedRouter(TransitFeed feed) async {
   if (!goFfiSupported) {
     return const MockTransitRouter();
   }
   try {
-    final zipPath = await _stageBundledFeed();
+    final zipPath = await _stageFeed(feed);
     final native = _NativeBindings.instance;
     final handle = native.open(zipPath);
     final stops = native.stops(handle);
@@ -53,39 +42,101 @@ Future<LocalTransitRouter> openToeiRouter() async {
     AppLogBuffer.instance.error(
       error,
       stackTrace: stack,
-      context: 'Failed to open Toei GTFS via FFI; falling back to mock',
+      context: 'Failed to open ${feed.id} via FFI; falling back to mock',
     );
     return const MockTransitRouter();
   }
 }
 
-/// Copies the bundled Toei zip into the platform-appropriate writable
-/// directory and returns its absolute path. The bundled bytes' sha256 is
-/// recorded in a sidecar file so we only rewrite when the asset changes
-/// (e.g. when the developer re-runs `tool/fetch_gtfs`).
-Future<String> _stageBundledFeed() async {
+bool get goFfiSupported =>
+    Platform.isAndroid ||
+    Platform.isIOS ||
+    Platform.isLinux ||
+    Platform.isMacOS ||
+    Platform.isWindows;
+
+/// Stages a feed into app cache and opens it through the Go FFI surface.
+/// Returns a long-lived router whose underlying feed handle stays alive for
+/// the lifetime of the process.
+///
+/// Falls back to [MockTransitRouter] if anything along the way fails — the
+/// UI should always remain usable even when the FFI is unavailable.
+Future<String> _stageFeed(TransitFeed feed) async {
   final supportDir = await getApplicationSupportDirectory();
-  final feedDir = Directory('${supportDir.path}/gtfs');
+  final feedDir = Directory('${supportDir.path}/$_kFeedCacheDir/${feed.id}');
   if (!feedDir.existsSync()) {
     feedDir.createSync(recursive: true);
   }
-  final dst = File('${feedDir.path}/$_kFeedBasename');
+  final dst = File('${feedDir.path}/${feed.localFileName}');
   final stamp = File('${dst.path}.sha256');
+  final isBundled = feed.isBundled;
 
-  final assetData = await rootBundle.load(_kFeedAssetPath);
-  final bytes = assetData.buffer
-      .asUint8List(assetData.offsetInBytes, assetData.lengthInBytes);
-  final expected = sha256.convert(bytes).toString();
+  final expectedStamp = isBundled
+      ? await _bundledFeedStamp(feed)
+      : _cacheStamp(feed);
+  final existingStamp = stamp.existsSync() ? stamp.readAsStringSync().trim() : '';
+  final hasFreshCache = dst.existsSync() && existingStamp == expectedStamp;
+  if (hasFreshCache) {
+    return dst.path;
+  }
 
-  final fresh = dst.existsSync() &&
-      stamp.existsSync() &&
-      stamp.readAsStringSync().trim() == expected;
-  if (!fresh) {
-    dst.writeAsBytesSync(bytes, flush: true);
-    stamp.writeAsStringSync(expected);
+  if (isBundled) {
+    await _cacheBundledFeed(feed, dst, stamp);
+  } else {
+    await _downloadFeed(feed, dst, stamp);
   }
   return dst.path;
 }
+
+Future<void> _cacheBundledFeed(TransitFeed feed, File dst, File stamp) async {
+  if (feed.bundledAssetPath == null) {
+    throw StateError('missing bundled asset path for ${feed.id}');
+  }
+  final assetData = await rootBundle.load(feed.bundledAssetPath);
+  final bytes = assetData.buffer
+      .asUint8List(assetData.offsetInBytes, assetData.lengthInBytes);
+  final expected = sha256.convert(bytes).toString();
+  dst.writeAsBytesSync(bytes, flush: true);
+  stamp.writeAsStringSync(_cacheStampWithHash(feed, expected));
+}
+
+Future<String> _bundledFeedStamp(TransitFeed feed) async {
+  if (feed.bundledAssetPath == null) {
+    throw StateError('missing bundled asset path for ${feed.id}');
+  }
+  final assetData = await rootBundle.load(feed.bundledAssetPath);
+  final bytes = assetData.buffer
+      .asUint8List(assetData.offsetInBytes, assetData.lengthInBytes);
+  final expected = sha256.convert(bytes).toString();
+  return _cacheStampWithHash(feed, expected);
+}
+
+Future<void> _downloadFeed(TransitFeed feed, File dst, File stamp) async {
+  final client = HttpClient();
+  try {
+    final request = await client.getUrl(Uri.parse(feed.sourceUrl));
+    final result = await request.close();
+    if (result.statusCode < 200 || result.statusCode >= 300) {
+      throw HttpException(
+        'failed to download ${feed.id}: HTTP ${result.statusCode}',
+        uri: Uri.parse(feed.sourceUrl),
+      );
+    }
+    final tmp = File('${dst.path}.tmp');
+    final sink = tmp.openWrite();
+    await result.pipe(sink);
+    await sink.close();
+    await tmp.rename(dst.path);
+    stamp.writeAsStringSync(_cacheStamp(feed));
+  } finally {
+    client.close();
+  }
+}
+
+String _cacheStampWithHash(TransitFeed feed, String hash) =>
+    '${feed.sourceUrl}\n$hash';
+
+String _cacheStamp(TransitFeed feed) => feed.sourceUrl;
 
 /// Thin wrapper that owns the symbols looked up from the Go-built shared
 /// library. The C ABI is JSON-in / JSON-out, with the response pointer
@@ -275,7 +326,10 @@ class _GoFfiRouter implements LocalTransitRouter {
     Map<String, dynamic> json,
     DateTime sameDayAnchor,
   ) {
-    final mode = _modeFor(json['mode'] as String?);
+    final mode = _modeFor(
+      json['mode'] as String?,
+      (json['routeType'] as num?)?.toInt(),
+    );
     final fromStop = _stopFromLegPayload(json['fromStop']);
     final toStop = _stopFromLegPayload(json['toStop']);
     final dep = _toDateTime(json['departure'] as num, sameDayAnchor);
@@ -288,6 +342,7 @@ class _GoFfiRouter implements LocalTransitRouter {
       arrival: arr,
       routeName: json['routeId'] as String?,
       tripId: json['tripId'] as String?,
+      routeType: (json['routeType'] as num?)?.toInt(),
     );
   }
 
@@ -311,17 +366,31 @@ class _GoFfiRouter implements LocalTransitRouter {
     return base.add(Duration(seconds: secondsFromMidnight.toInt()));
   }
 
-  TransitMode _modeFor(String? raw) {
+  TransitMode _modeFor(String? raw, int? routeType) {
     switch (raw) {
       case 'walk':
         return TransitMode.walk;
       case 'transit':
-        // Today the Toei feed we ship is the subway file. When we add buses
-        // or trams the cffi response should include route_type so we can
-        // pick the right Material icon; until then default to subway.
-        return TransitMode.subway;
+        return _transitModeForRouteType(routeType);
       default:
         return TransitMode.subway;
+    }
+  }
+
+  TransitMode _transitModeForRouteType(int? routeType) {
+    switch (routeType) {
+      case 0:
+        return TransitMode.tram;
+      case 1:
+        return TransitMode.subway;
+      case 2:
+        return TransitMode.rail;
+      case 3:
+        return TransitMode.bus;
+      case 4:
+        return TransitMode.ferry;
+      default:
+        return TransitMode.rail;
     }
   }
 }

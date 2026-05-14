@@ -55,8 +55,15 @@ class _TransitPlannerAppState extends State<TransitPlannerApp> {
         ),
         GoRoute(
           path: '/itinerary',
-          builder: (context, state) =>
-              ItineraryDetailPage(itinerary: state.extra! as Itinerary),
+          builder: (context, state) {
+            final extra = state.extra;
+            if (extra is Itinerary) {
+              return ItineraryDetailPage(itinerary: extra);
+            }
+            return const Scaffold(
+              body: Center(child: Text('No itinerary data available')),
+            );
+          },
         ),
       ],
     );

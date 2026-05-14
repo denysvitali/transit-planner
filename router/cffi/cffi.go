@@ -82,6 +82,7 @@ type legPayload struct {
 	Mode      string      `json:"mode"`
 	RouteID   string      `json:"routeId,omitempty"`
 	TripID    string      `json:"tripId,omitempty"`
+	RouteType int         `json:"routeType,omitempty"`
 	FromStop  router.Stop `json:"fromStop"`
 	ToStop    router.Stop `json:"toStop"`
 	Departure int         `json:"departure"`
@@ -182,10 +183,15 @@ func RouteJSON(raw string) string {
 
 	legs := make([]legPayload, 0, len(itinerary.Legs))
 	for _, leg := range itinerary.Legs {
+		routeType := -1
+		if route, ok := engine.feed.Routes[leg.RouteID]; ok {
+			routeType = route.Type
+		}
 		legs = append(legs, legPayload{
 			Mode:      leg.Mode,
 			RouteID:   leg.RouteID,
 			TripID:    leg.TripID,
+			RouteType: routeType,
 			FromStop:  leg.FromStop,
 			ToStop:    leg.ToStop,
 			Departure: leg.Departure,
