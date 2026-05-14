@@ -1,7 +1,7 @@
 // Package main is a thin cgo wrapper around router/cffi that produces the
 // dynamic library consumed by the Flutter app over dart:ffi.
 //
-// All routing logic lives in router/cffi.RouteJSON (pure Go) so it is fully
+// All routing logic lives in router/cffi.*JSON (pure Go) so it is fully
 // tested by the default `go test ./...` flow without a C toolchain. This
 // wrapper only marshals C strings in and out.
 //
@@ -10,8 +10,8 @@
 //	CGO_ENABLED=1 go build -buildmode=c-shared \
 //	  -o build/libtransit_planner.so ./cmd/libtransitplanner
 //
-// For Android / iOS, drive the same command with the NDK / Xcode toolchain
-// in CC plus per-ABI GOOS/GOARCH.
+// For Android, drive the same command with the NDK toolchain wrapper as
+// CC (see .github/workflows/ci.yml for the per-ABI matrix).
 package main
 
 /*
@@ -25,21 +25,40 @@ import (
 	"github.com/denysvitali/transit-planner/router/cffi"
 )
 
-// TP_Route accepts a JSON request and returns a JSON response. The returned
-// pointer is allocated by cgo and must be released by the caller via
-// TP_Free; failing to do so leaks memory on every call.
+// TP_Open accepts a JSON request with feedZip or feedDir, loads the feed,
+// and returns a JSON response containing a handle for subsequent calls.
+//
+//export TP_Open
+func TP_Open(reqJSON *C.char) *C.char {
+	return C.CString(cffi.OpenJSON(goString(reqJSON)))
+}
+
+// TP_Close releases a feed previously returned by TP_Open. Safe to call
+// repeatedly with the same handle.
+//
+//export TP_Close
+func TP_Close(reqJSON *C.char) *C.char {
+	return C.CString(cffi.CloseJSON(goString(reqJSON)))
+}
+
+// TP_Stops returns the stop list for a previously-opened feed as JSON.
+//
+//export TP_Stops
+func TP_Stops(reqJSON *C.char) *C.char {
+	return C.CString(cffi.StopsJSON(goString(reqJSON)))
+}
+
+// TP_Route computes a single itinerary. The request can carry either a
+// handle (the fast path, feed reused across calls) or an inline
+// feedZip/feedDir (the legacy one-shot path).
 //
 //export TP_Route
 func TP_Route(reqJSON *C.char) *C.char {
-	var raw string
-	if reqJSON != nil {
-		raw = C.GoString(reqJSON)
-	}
-	return C.CString(cffi.RouteJSON(raw))
+	return C.CString(cffi.RouteJSON(goString(reqJSON)))
 }
 
-// TP_Free releases a C string previously returned by TP_Route. Safe to call
-// with a nil pointer.
+// TP_Free releases a C string previously returned by any of the entry
+// points above. Safe to call with a nil pointer.
 //
 //export TP_Free
 func TP_Free(p *C.char) {
@@ -47,6 +66,13 @@ func TP_Free(p *C.char) {
 		return
 	}
 	C.free(unsafe.Pointer(p))
+}
+
+func goString(p *C.char) string {
+	if p == nil {
+		return ""
+	}
+	return C.GoString(p)
 }
 
 // main is required by -buildmode=c-shared but is never invoked at runtime.

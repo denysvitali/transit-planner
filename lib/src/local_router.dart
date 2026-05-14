@@ -1,11 +1,21 @@
 import 'models.dart';
+import 'stop_search.dart';
 
 abstract class LocalTransitRouter {
+  /// Returns the set of stops the router knows about. Used by the UI to
+  /// populate origin/destination pickers.
+  Future<List<TransitStop>> stops();
+
+  /// Computes one or more itineraries for the given [request]. May return
+  /// an empty list when no route is reachable under the constraints.
   Future<List<Itinerary>> route(RouteRequest request);
 }
 
 class MockTransitRouter implements LocalTransitRouter {
   const MockTransitRouter();
+
+  @override
+  Future<List<TransitStop>> stops() async => kMockStops;
 
   @override
   Future<List<Itinerary>> route(RouteRequest request) async {

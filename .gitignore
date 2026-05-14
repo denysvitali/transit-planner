@@ -61,3 +61,8 @@ app.*.map.json
 # Shared library output from cmd/libtransitplanner (c-shared build).
 /build/libtransit_planner.*
 /build/transit_planner.*
+
+# Android Go FFI artifact dropped in by CI (build-go-android job). Never
+# commit these; the SHA changes with every Go toolchain and Toei feed
+# update, so they would just produce binary diff noise.
+/android/app/src/main/jniLibs/

@@ -179,6 +179,64 @@ func TestRouteJSONEmptyPayload(t *testing.T) {
 	}
 }
 
+// TestHandleLifecycle exercises the OpenJSON / StopsJSON / RouteJSON (with
+// a handle) / CloseJSON pipeline against the vendored Toei subway feed —
+// the exact code path the Flutter app will use.
+func TestHandleLifecycle(t *testing.T) {
+	const zipPath = "../../assets/sample_toei_train/Toei-Train-GTFS.zip"
+	if _, err := os.Stat(zipPath); err != nil {
+		t.Skipf("vendored Toei zip missing: %v", err)
+	}
+
+	openReq, _ := json.Marshal(openRequest{FeedZip: zipPath})
+	openResp := OpenJSON(string(openReq))
+	var open openResponse
+	if err := json.Unmarshal([]byte(openResp), &open); err != nil {
+		t.Fatalf("unmarshal open response: %v (raw=%s)", err, openResp)
+	}
+	if open.Handle == 0 {
+		t.Fatalf("OpenJSON returned empty handle: %s", openResp)
+	}
+	t.Cleanup(func() {
+		closeReq, _ := json.Marshal(closeRequest{Handle: open.Handle})
+		CloseJSON(string(closeReq))
+	})
+
+	stopsReq, _ := json.Marshal(stopsRequest{Handle: open.Handle})
+	var stops stopsResponse
+	if err := json.Unmarshal([]byte(StopsJSON(string(stopsReq))), &stops); err != nil {
+		t.Fatalf("unmarshal stops response: %v", err)
+	}
+	if len(stops.Stops) < 100 {
+		t.Fatalf("stops = %d, want >= 100", len(stops.Stops))
+	}
+
+	routeReq, _ := json.Marshal(routeRequest{
+		Handle:    open.Handle,
+		From:      "101",
+		To:        "108",
+		Departure: 5 * 3600,
+	})
+	var route routeResponse
+	if err := json.Unmarshal([]byte(RouteJSON(string(routeReq))), &route); err != nil {
+		t.Fatalf("unmarshal route response: %v", err)
+	}
+	if route.Arrival <= 5*3600 {
+		t.Fatalf("arrival = %d, want > %d", route.Arrival, 5*3600)
+	}
+
+	// After close the handle must no longer route.
+	closeReq, _ := json.Marshal(closeRequest{Handle: open.Handle})
+	if got := CloseJSON(string(closeReq)); got != `{}` {
+		t.Fatalf("CloseJSON = %q, want {}", got)
+	}
+	var afterErr errorResponse
+	json.Unmarshal([]byte(RouteJSON(string(routeReq))), &afterErr)
+	if afterErr.Error == "" {
+		t.Fatal("expected error routing against closed handle")
+	}
+}
+
 func TestRouteJSONRejectsBothFeedSources(t *testing.T) {
 	req := routeRequest{
 		FeedDir: "/tmp/whatever",

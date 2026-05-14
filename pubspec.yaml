@@ -37,6 +37,12 @@ dependencies:
   go_router: ^17.2.3
   maplibre_gl: ^0.26.0
   shared_preferences: ^2.5.5
+  # Native bridge to the Go router. ffi provides Pointer<Utf8>;
+  # path_provider gives us a writable directory to stage the bundled GTFS
+  # zip into before handing the path to TP_Open.
+  ffi: ^2.1.4
+  path_provider: ^2.1.5
+  crypto: ^3.0.6
 
 dev_dependencies:
   flutter_test:
@@ -59,6 +65,9 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/sample_toei_train/Toei-Train-GTFS.zip
 
   # To add assets to your application, add an assets section, like this:
   # assets:

@@ -1,29 +1,75 @@
 // Package cffi is the pure-Go core that powers the C-ABI / dart:ffi surface
 // of the transit-planner router. It accepts JSON requests and returns JSON
 // responses, so the actual cgo wrapper (in cmd/libtransitplanner) stays
-// tiny — it only forwards C strings to and from RouteJSON.
+// tiny — it only forwards C strings to and from these functions.
 //
 // Keeping this package pure-Go means it is exercised by the default
 // `go test ./...` flow without needing a C toolchain in CI, and it is
-// importable from the rest of the Go codebase (e.g. the CLI router) without
-// pulling cgo in transitively.
+// importable from the rest of the Go codebase without pulling cgo in
+// transitively.
 package cffi
 
 import (
 	"encoding/json"
 	"errors"
+	"sync"
+	"sync/atomic"
 
 	"github.com/denysvitali/transit-planner/router"
 )
 
-// routeRequest is the JSON payload accepted by the FFI entry point.
-//
-// Exactly one of FeedDir and FeedZip must be set:
-//   - FeedDir points at a directory of extracted GTFS CSV files.
-//   - FeedZip points at a zip archive in the shape published by agencies
-//     (e.g. the ODPT Toei feeds). The mobile app ships zips as assets so
-//     this is the production path.
+// feedHandle bundles a parsed GTFS feed with its prebuilt engine so that
+// subsequent route queries can reuse the same indexes. The engine is the
+// expensive piece — for the Toei subway feed it owns ~5 600 trip records —
+// so reloading per call wastes 300-500 ms each time.
+type feedHandle struct {
+	feed   *router.Feed
+	engine *router.Engine
+}
+
+var (
+	handles    sync.Map // int64 → *feedHandle
+	nextHandle atomic.Int64
+)
+
+// openRequest opens a GTFS feed and returns a handle that subsequent calls
+// reference. Exactly one of FeedZip and FeedDir must be set.
+type openRequest struct {
+	FeedDir string `json:"feedDir,omitempty"`
+	FeedZip string `json:"feedZip,omitempty"`
+}
+
+type openResponse struct {
+	Handle int64 `json:"handle"`
+}
+
+// closeRequest releases a previously-opened feed. It is safe to call with a
+// handle that no longer exists.
+type closeRequest struct {
+	Handle int64 `json:"handle"`
+}
+
+// stopsRequest asks for the stops belonging to a feed.
+type stopsRequest struct {
+	Handle int64 `json:"handle"`
+}
+
+type stopPayload struct {
+	ID   string  `json:"id"`
+	Name string  `json:"name"`
+	Lat  float64 `json:"lat"`
+	Lon  float64 `json:"lon"`
+}
+
+type stopsResponse struct {
+	Stops []stopPayload `json:"stops"`
+}
+
+// routeRequest is the routing payload. Provide either Handle (the fast path
+// — feed reused across calls) or FeedZip/FeedDir (the legacy one-shot path
+// that loads the feed for this call only and discards it).
 type routeRequest struct {
+	Handle       int64  `json:"handle,omitempty"`
 	FeedDir      string `json:"feedDir,omitempty"`
 	FeedZip      string `json:"feedZip,omitempty"`
 	From         string `json:"from"`
@@ -32,7 +78,6 @@ type routeRequest struct {
 	MaxTransfers int    `json:"maxTransfers"`
 }
 
-// legPayload mirrors router.Leg using only JSON-friendly types.
 type legPayload struct {
 	Mode      string      `json:"mode"`
 	RouteID   string      `json:"routeId,omitempty"`
@@ -43,38 +88,91 @@ type legPayload struct {
 	Arrival   int         `json:"arrival"`
 }
 
-// routeResponse is the success payload returned by RouteJSON.
 type routeResponse struct {
 	Arrival   int          `json:"arrival"`
 	Transfers int          `json:"transfers"`
 	Legs      []legPayload `json:"legs"`
 }
 
-// errorResponse is returned whenever RouteJSON cannot produce an itinerary.
 type errorResponse struct {
 	Error string `json:"error"`
 }
 
-// RouteJSON is the single entrypoint of the FFI surface. It loads the
-// requested GTFS feed and runs a route query against it. Both input and
-// output are JSON strings; on any failure the response is shaped like
-// {"error": "..."}, never an empty string.
+// OpenJSON loads a GTFS feed (zip or directory) and returns a handle the
+// caller can pass to StopsJSON / RouteJSON / CloseJSON.
+func OpenJSON(raw string) string {
+	if raw == "" {
+		return errorJSON("request is null")
+	}
+	var req openRequest
+	if err := json.Unmarshal([]byte(raw), &req); err != nil {
+		return errorJSON("invalid request JSON: " + err.Error())
+	}
+	feed, err := loadFeed(req.FeedDir, req.FeedZip)
+	if err != nil {
+		return errorJSON("load feed: " + err.Error())
+	}
+	h := nextHandle.Add(1)
+	handles.Store(h, &feedHandle{feed: feed, engine: router.NewEngine(feed)})
+	return mustMarshal(openResponse{Handle: h})
+}
+
+// CloseJSON releases the feed previously returned by OpenJSON. Calling with
+// an unknown handle is a no-op so the caller can be idempotent.
+func CloseJSON(raw string) string {
+	if raw == "" {
+		return errorJSON("request is null")
+	}
+	var req closeRequest
+	if err := json.Unmarshal([]byte(raw), &req); err != nil {
+		return errorJSON("invalid request JSON: " + err.Error())
+	}
+	handles.Delete(req.Handle)
+	return `{}`
+}
+
+// StopsJSON returns every stop in a previously-opened feed.
+func StopsJSON(raw string) string {
+	if raw == "" {
+		return errorJSON("request is null")
+	}
+	var req stopsRequest
+	if err := json.Unmarshal([]byte(raw), &req); err != nil {
+		return errorJSON("invalid request JSON: " + err.Error())
+	}
+	h, ok := lookupHandle(req.Handle)
+	if !ok {
+		return errorJSON("unknown handle")
+	}
+	stops := make([]stopPayload, 0, len(h.feed.Stops))
+	for _, s := range h.feed.Stops {
+		stops = append(stops, stopPayload{
+			ID:   s.ID,
+			Name: s.Name,
+			Lat:  s.Lat,
+			Lon:  s.Lon,
+		})
+	}
+	return mustMarshal(stopsResponse{Stops: stops})
+}
+
+// RouteJSON computes a single itinerary. It accepts either a handle (fast)
+// or an inline feedZip/feedDir (slow, one-shot — useful for tests and the
+// non-interactive CLI).
 func RouteJSON(raw string) string {
 	if raw == "" {
 		return errorJSON("request is null")
 	}
-
 	var req routeRequest
 	if err := json.Unmarshal([]byte(raw), &req); err != nil {
 		return errorJSON("invalid request JSON: " + err.Error())
 	}
 
-	feed, err := loadFeed(req)
+	engine, err := engineFor(req)
 	if err != nil {
-		return errorJSON("load feed: " + err.Error())
+		return errorJSON(err.Error())
 	}
 
-	engine := router.NewEngine(feed)
 	itinerary, err := engine.Route(req.From, req.To, req.Departure, router.Options{
 		MaxTransfers: req.MaxTransfers,
 	})
@@ -94,36 +192,60 @@ func RouteJSON(raw string) string {
 			Arrival:   leg.Arrival,
 		})
 	}
-	resp := routeResponse{
+	return mustMarshal(routeResponse{
 		Arrival:   itinerary.Arrival,
 		Transfers: itinerary.Transfers,
 		Legs:      legs,
+	})
+}
+
+func engineFor(req routeRequest) (*router.Engine, error) {
+	if req.Handle != 0 {
+		h, ok := lookupHandle(req.Handle)
+		if !ok {
+			return nil, errors.New("unknown handle")
+		}
+		return h.engine, nil
 	}
-	data, err := json.Marshal(resp)
+	feed, err := loadFeed(req.FeedDir, req.FeedZip)
+	if err != nil {
+		return nil, errors.New("load feed: " + err.Error())
+	}
+	return router.NewEngine(feed), nil
+}
+
+func loadFeed(dir, zip string) (*router.Feed, error) {
+	switch {
+	case zip != "" && dir != "":
+		return nil, errors.New("specify exactly one of feedZip or feedDir")
+	case zip != "":
+		return router.LoadGTFSZip(zip)
+	case dir != "":
+		return router.LoadGTFS(dir)
+	default:
+		return nil, errors.New("feedDir or feedZip is required")
+	}
+}
+
+func lookupHandle(h int64) (*feedHandle, bool) {
+	v, ok := handles.Load(h)
+	if !ok {
+		return nil, false
+	}
+	return v.(*feedHandle), true
+}
+
+func mustMarshal(v any) string {
+	data, err := json.Marshal(v)
 	if err != nil {
 		return errorJSON("encode response: " + err.Error())
 	}
 	return string(data)
 }
 
-func loadFeed(req routeRequest) (*router.Feed, error) {
-	switch {
-	case req.FeedZip != "" && req.FeedDir != "":
-		return nil, errors.New("specify exactly one of feedZip or feedDir")
-	case req.FeedZip != "":
-		return router.LoadGTFSZip(req.FeedZip)
-	case req.FeedDir != "":
-		return router.LoadGTFS(req.FeedDir)
-	default:
-		return nil, errors.New("feedDir or feedZip is required")
-	}
-}
-
 func errorJSON(message string) string {
 	data, err := json.Marshal(errorResponse{Error: message})
 	if err != nil {
-		// Fall back to a hard-coded payload that is guaranteed to be valid
-		// JSON when even the error encoder fails.
 		return `{"error":"unknown error"}`
 	}
 	return string(data)

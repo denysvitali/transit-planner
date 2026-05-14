@@ -67,10 +67,66 @@ jobs:
           test -f build/libtransit_planner.h
           nm -D build/libtransit_planner.so | grep -E '\bTP_(Route|Free)\b'
 
+  build-go-android:
+    name: Build Go FFI library for Android
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Cross-compile cmd/libtransitplanner for the Android ABIs that the
+    # Flutter build will package. The output drops into jniLibs/<abi>/ so
+    # build-android can shuffle it under android/app/src/main/jniLibs/ via
+    # actions/download-artifact.
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Setup Android NDK
+        id: ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
+          add-to-path: false
+
+      - name: Build .so per ABI
+        env:
+          NDK_BIN: ${{ steps.ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin
+          API: '24'
+        run: |
+          mkdir -p jniLibs/arm64-v8a jniLibs/x86_64
+          CGO_ENABLED=1 GOOS=android GOARCH=arm64 \
+            CC=$NDK_BIN/aarch64-linux-android$API-clang \
+            CXX=$NDK_BIN/aarch64-linux-android$API-clang++ \
+            go build -buildmode=c-shared -trimpath \
+              -o jniLibs/arm64-v8a/libtransit_planner.so \
+              ./cmd/libtransitplanner
+          CGO_ENABLED=1 GOOS=android GOARCH=amd64 \
+            CC=$NDK_BIN/x86_64-linux-android$API-clang \
+            CXX=$NDK_BIN/x86_64-linux-android$API-clang++ \
+            go build -buildmode=c-shared -trimpath \
+              -o jniLibs/x86_64/libtransit_planner.so \
+              ./cmd/libtransitplanner
+          "$NDK_BIN/llvm-strip" --strip-unneeded \
+            jniLibs/arm64-v8a/libtransit_planner.so \
+            jniLibs/x86_64/libtransit_planner.so
+          file jniLibs/*/libtransit_planner.so
+
+      - name: Upload Android FFI jniLibs
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-jnilibs
+          path: jniLibs/
+          retention-days: 14
+
   build-android:
     name: Build Android Release APK
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    needs: [build-go-android]
     # Build a release APK for every commit pushed to a tracked branch, version
     # tags, and manual runs. PRs still build (via the default trigger) but do
     # not publish a GitHub Release.
@@ -106,6 +162,17 @@ jobs:
       - name: Generate app icons from SVG
         run: python3 tool/generate_app_icon.py
 
+      - name: Download Android FFI jniLibs
+        uses: actions/download-artifact@v8
+        with:
+          name: android-jnilibs
+          path: android/app/src/main/jniLibs/
+
+      - name: Verify Go FFI library is in place
+        run: |
+          find android/app/src/main/jniLibs -name 'libtransit_planner.so' -print
+          test -f android/app/src/main/jniLibs/arm64-v8a/libtransit_planner.so
+
       - name: Get dependencies
         run: flutter pub get
 
@@ -113,6 +180,11 @@ jobs:
         run: |
           flutter build apk --release --no-pub \
             --build-number ${{ steps.build_meta.outputs.BUILD_NUMBER }}
+
+      - name: Verify Go FFI library is packaged in the APK
+        run: |
+          unzip -l build/app/outputs/flutter-apk/app-release.apk \
+            | grep libtransit_planner.so
 
       - name: Upload Release APK artifact
         uses: actions/upload-artifact@v7
