@@ -16,7 +16,8 @@ type Engine struct {
 }
 
 type Options struct {
-	MaxTransfers int
+	MaxTransfers      int
+	AllowedRouteTypes map[int]bool
 }
 
 type Leg struct {
@@ -61,6 +62,14 @@ func NewEngine(feed *Feed) *Engine {
 	}
 }
 
+func (e *Engine) RouteType(routeID string) (int, bool) {
+	route, ok := e.feed.Routes[routeID]
+	if !ok {
+		return 0, false
+	}
+	return route.Type, true
+}
+
 func (e *Engine) Route(originStopID, destinationStopID string, departure int, options Options) (Itinerary, error) {
 	if _, ok := e.feed.Stops[originStopID]; !ok {
 		return Itinerary{}, errors.New("origin stop not found")
@@ -84,6 +93,9 @@ func (e *Engine) Route(originStopID, destinationStopID string, departure int, op
 		e.applyTransfers(best[round])
 		for stopID, current := range best[round] {
 			for _, trip := range e.tripsByStop[stopID] {
+				if !e.routeAllowed(trip.RouteID, options.AllowedRouteTypes) {
+					continue
+				}
 				boardIndex := firstBoardableIndex(trip.StopTimes, stopID, current.time)
 				if boardIndex < 0 {
 					continue
@@ -128,6 +140,17 @@ func (e *Engine) Route(originStopID, destinationStopID string, departure int, op
 		return Itinerary{}, errors.New("destination unreachable")
 	}
 	return e.buildItinerary(destination), nil
+}
+
+func (e *Engine) routeAllowed(routeID string, allowed map[int]bool) bool {
+	if allowed == nil {
+		return true
+	}
+	routeType, ok := e.RouteType(routeID)
+	if !ok {
+		return false
+	}
+	return allowed[routeType]
 }
 
 func (e *Engine) applyTransfers(round map[string]*label) {

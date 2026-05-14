@@ -174,9 +174,9 @@ class _FeedSectionState extends State<_FeedSection> {
                       Text(
                         'Set as default for next launch',
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                      )
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -210,27 +210,22 @@ class _AboutSection extends StatelessWidget {
         const SizedBox(height: AppSpacing.s),
         Text('Transit data sources', style: theme.textTheme.titleMedium),
         const SizedBox(height: AppSpacing.xs),
-        ...kTransitFeeds
-            .map(
-              (feed) => Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.s),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      feed.name,
-                      style: theme.textTheme.titleSmall,
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    SelectableText(
-                      feed.attribution,
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ],
+        ...kTransitFeeds.map(
+          (feed) => Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.s),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(feed.name, style: theme.textTheme.titleSmall),
+                const SizedBox(height: AppSpacing.xs),
+                SelectableText(
+                  feed.attribution,
+                  style: theme.textTheme.bodySmall,
                 ),
-              ),
-            )
-            .toList(growable: false),
+              ],
+            ),
+          ),
+        ),
         const SizedBox(height: AppSpacing.xs),
         Text(
           'Licences and terms are listed in the same order as the catalog.',

@@ -1,11 +1,4 @@
-enum TransitMode {
-  walk,
-  bus,
-  tram,
-  rail,
-  subway,
-  ferry,
-}
+enum TransitMode { walk, bus, tram, rail, subway, ferry }
 
 class TransitStop {
   const TransitStop({

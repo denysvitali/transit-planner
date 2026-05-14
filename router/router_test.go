@@ -55,6 +55,14 @@ B,C,2,60
 	if itinerary.Legs[1].Mode != "walk" {
 		t.Fatalf("middle leg mode = %q, want walk", itinerary.Legs[1].Mode)
 	}
+
+	_, err = engine.Route("A", "D", 7*3600+55*60, Options{
+		MaxTransfers:      2,
+		AllowedRouteTypes: map[int]bool{1: true},
+	})
+	if err == nil {
+		t.Fatal("route with only subway allowed succeeded, want unreachable")
+	}
 }
 
 func TestRouteUsesSameStationTransferWhenFeedOmitsTransfers(t *testing.T) {

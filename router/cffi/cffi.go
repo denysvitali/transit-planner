@@ -76,6 +76,7 @@ type routeRequest struct {
 	To           string `json:"to"`
 	Departure    int    `json:"departure"`
 	MaxTransfers int    `json:"maxTransfers"`
+	RouteTypes   []int  `json:"routeTypes,omitempty"`
 }
 
 type legPayload struct {
@@ -175,7 +176,8 @@ func RouteJSON(raw string) string {
 	}
 
 	itinerary, err := engine.Route(req.From, req.To, req.Departure, router.Options{
-		MaxTransfers: req.MaxTransfers,
+		MaxTransfers:      req.MaxTransfers,
+		AllowedRouteTypes: allowedRouteTypes(req.RouteTypes),
 	})
 	if err != nil {
 		return errorJSON(err.Error())
@@ -184,8 +186,8 @@ func RouteJSON(raw string) string {
 	legs := make([]legPayload, 0, len(itinerary.Legs))
 	for _, leg := range itinerary.Legs {
 		routeType := -1
-		if route, ok := engine.feed.Routes[leg.RouteID]; ok {
-			routeType = route.Type
+		if gtfsRouteType, ok := engine.RouteType(leg.RouteID); ok {
+			routeType = gtfsRouteType
 		}
 		legs = append(legs, legPayload{
 			Mode:      leg.Mode,
@@ -203,6 +205,17 @@ func RouteJSON(raw string) string {
 		Transfers: itinerary.Transfers,
 		Legs:      legs,
 	})
+}
+
+func allowedRouteTypes(routeTypes []int) map[int]bool {
+	if routeTypes == nil {
+		return nil
+	}
+	allowed := make(map[int]bool, len(routeTypes))
+	for _, routeType := range routeTypes {
+		allowed[routeType] = true
+	}
+	return allowed
 }
 
 func engineFor(req routeRequest) (*router.Engine, error) {

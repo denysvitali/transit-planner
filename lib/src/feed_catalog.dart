@@ -61,7 +61,8 @@ const List<TransitFeed> kTransitFeeds = [
   TransitFeed(
     id: 'toei-bus',
     name: 'Tokyo Toei Bus',
-    description: 'Tokyo Metropolitan Bureau of Transportation municipal bus routes.',
+    description:
+        'Tokyo Metropolitan Bureau of Transportation municipal bus routes.',
     publisher: 'Tokyo Metropolitan Bureau of Transportation (東京都交通局)',
     license: 'CC-BY-4.0',
     sourceUrl:
@@ -105,16 +106,14 @@ const List<TransitFeed> kTransitFeeds = [
         '89d93f28-38b4-4971-9988-2ff2d3227f56/resource/'
         '50049b19-fe9f-4ca1-9ea9-9d0a24141644/download/172103_bus.zip',
     localFileName: '172103_bus.zip',
-    attribution:
-        'Transit data © Hakusan City (白山市), CC-BY 4.0.',
+    attribution: 'Transit data © Hakusan City (白山市), CC-BY 4.0.',
     centerLatitude: 36.2581,
     centerLongitude: 136.6290,
   ),
   TransitFeed(
     id: 'kanazawa-tsubata-bus',
     name: 'Tsubata Town Bus',
-    description:
-        'Tsubata Town bus routes on the GSF/GTFS-JP package.',
+    description: 'Tsubata Town bus routes on the GSF/GTFS-JP package.',
     publisher: 'Tsubata Town (Tsubata-chō), Ishikawa',
     license: 'CC-BY-4.0',
     sourceUrl:

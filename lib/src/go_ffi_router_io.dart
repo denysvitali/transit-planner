@@ -74,7 +74,9 @@ Future<String> _stageFeed(TransitFeed feed) async {
   final expectedStamp = isBundled
       ? await _bundledFeedStamp(feed)
       : _cacheStamp(feed);
-  final existingStamp = stamp.existsSync() ? stamp.readAsStringSync().trim() : '';
+  final existingStamp = stamp.existsSync()
+      ? stamp.readAsStringSync().trim()
+      : '';
   final hasFreshCache = dst.existsSync() && existingStamp == expectedStamp;
   if (hasFreshCache) {
     return dst.path;
@@ -89,24 +91,30 @@ Future<String> _stageFeed(TransitFeed feed) async {
 }
 
 Future<void> _cacheBundledFeed(TransitFeed feed, File dst, File stamp) async {
-  if (feed.bundledAssetPath == null) {
+  final assetPath = feed.bundledAssetPath;
+  if (assetPath == null) {
     throw StateError('missing bundled asset path for ${feed.id}');
   }
-  final assetData = await rootBundle.load(feed.bundledAssetPath);
-  final bytes = assetData.buffer
-      .asUint8List(assetData.offsetInBytes, assetData.lengthInBytes);
+  final assetData = await rootBundle.load(assetPath);
+  final bytes = assetData.buffer.asUint8List(
+    assetData.offsetInBytes,
+    assetData.lengthInBytes,
+  );
   final expected = sha256.convert(bytes).toString();
   dst.writeAsBytesSync(bytes, flush: true);
   stamp.writeAsStringSync(_cacheStampWithHash(feed, expected));
 }
 
 Future<String> _bundledFeedStamp(TransitFeed feed) async {
-  if (feed.bundledAssetPath == null) {
+  final assetPath = feed.bundledAssetPath;
+  if (assetPath == null) {
     throw StateError('missing bundled asset path for ${feed.id}');
   }
-  final assetData = await rootBundle.load(feed.bundledAssetPath);
-  final bytes = assetData.buffer
-      .asUint8List(assetData.offsetInBytes, assetData.lengthInBytes);
+  final assetData = await rootBundle.load(assetPath);
+  final bytes = assetData.buffer.asUint8List(
+    assetData.offsetInBytes,
+    assetData.lengthInBytes,
+  );
   final expected = sha256.convert(bytes).toString();
   return _cacheStampWithHash(feed, expected);
 }
@@ -248,11 +256,11 @@ DynamicLibrary _openLibrary() {
 }
 
 TransitStop _stopFromJson(Map<String, dynamic> json) => TransitStop(
-      id: json['id'] as String,
-      name: json['name'] as String,
-      latitude: (json['lat'] as num).toDouble(),
-      longitude: (json['lon'] as num).toDouble(),
-    );
+  id: json['id'] as String,
+  name: json['name'] as String,
+  latitude: (json['lat'] as num).toDouble(),
+  longitude: (json['lon'] as num).toDouble(),
+);
 
 /// Thrown when the Go side returns a non-empty `error` field.
 class FfiRouterException implements Exception {
@@ -270,10 +278,10 @@ class _GoFfiRouter implements LocalTransitRouter {
     required _NativeBindings native,
     required int handle,
     required List<TransitStop> stops,
-  })  : _native = native,
-        _handle = handle,
-        _stops = stops,
-        _stopsById = {for (final s in stops) s.id: s};
+  }) : _native = native,
+       _handle = handle,
+       _stops = stops,
+       _stopsById = {for (final s in stops) s.id: s};
 
   final _NativeBindings _native;
   final int _handle;
@@ -285,7 +293,8 @@ class _GoFfiRouter implements LocalTransitRouter {
 
   @override
   Future<List<Itinerary>> route(RouteRequest request) async {
-    final secondsFromMidnight = request.departure.hour * 3600 +
+    final secondsFromMidnight =
+        request.departure.hour * 3600 +
         request.departure.minute * 60 +
         request.departure.second;
     final Map<String, dynamic> response;
@@ -296,6 +305,7 @@ class _GoFfiRouter implements LocalTransitRouter {
         'to': request.destination.id,
         'departure': secondsFromMidnight,
         'maxTransfers': request.maxTransfers,
+        'routeTypes': _routeTypesForModes(request.modes),
       });
     } on FfiRouterException catch (error) {
       if (error.isDestinationUnreachable) {
@@ -317,15 +327,10 @@ class _GoFfiRouter implements LocalTransitRouter {
       }
     }
     final transfers = (response['transfers'] as num?)?.toInt() ?? 0;
-    return [
-      Itinerary(legs: legs, transfers: transfers, walking: walking),
-    ];
+    return [Itinerary(legs: legs, transfers: transfers, walking: walking)];
   }
 
-  ItineraryLeg _legFromJson(
-    Map<String, dynamic> json,
-    DateTime sameDayAnchor,
-  ) {
+  ItineraryLeg _legFromJson(Map<String, dynamic> json, DateTime sameDayAnchor) {
     final mode = _modeFor(
       json['mode'] as String?,
       (json['routeType'] as num?)?.toInt(),
@@ -392,5 +397,26 @@ class _GoFfiRouter implements LocalTransitRouter {
       default:
         return TransitMode.rail;
     }
+  }
+
+  List<int> _routeTypesForModes(Set<TransitMode> modes) {
+    final routeTypes = <int>{};
+    for (final mode in modes) {
+      switch (mode) {
+        case TransitMode.walk:
+          break;
+        case TransitMode.tram:
+          routeTypes.add(0);
+        case TransitMode.subway:
+          routeTypes.add(1);
+        case TransitMode.rail:
+          routeTypes.add(2);
+        case TransitMode.bus:
+          routeTypes.add(3);
+        case TransitMode.ferry:
+          routeTypes.add(4);
+      }
+    }
+    return routeTypes.toList(growable: false);
   }
 }

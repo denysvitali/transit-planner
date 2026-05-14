@@ -63,7 +63,8 @@ class _HomePageState extends State<HomePage> {
     }
     final prefs = await SharedPreferences.getInstance();
     final stored = prefs.getString(_feedSelectionStorageKey);
-    return findFeedById(stored ?? kDefaultFeedId) ?? findFeedById(kDefaultFeedId)!;
+    return findFeedById(stored ?? kDefaultFeedId) ??
+        findFeedById(kDefaultFeedId)!;
   }
 
   Future<void> _openFeed(TransitFeed feed) async {
@@ -187,9 +188,9 @@ class _HomePageState extends State<HomePage> {
         _itineraries = const [];
         _loading = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Route planning failed')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Route planning failed')));
     }
   }
 
@@ -205,16 +206,18 @@ class _HomePageState extends State<HomePage> {
   }
 
   List<Itinerary> _filterByModes(List<Itinerary> itineraries) {
-    return itineraries.where((itinerary) {
-      if (_modes.isEmpty) return false;
-      for (final leg in itinerary.legs) {
-        if (leg.mode == TransitMode.walk) continue;
-        if (!_modes.contains(leg.mode)) {
-          return false;
-        }
-      }
-      return true;
-    }).toList(growable: false);
+    return itineraries
+        .where((itinerary) {
+          if (_modes.isEmpty) return false;
+          for (final leg in itinerary.legs) {
+            if (leg.mode == TransitMode.walk) continue;
+            if (!_modes.contains(leg.mode)) {
+              return false;
+            }
+          }
+          return true;
+        })
+        .toList(growable: false);
   }
 
   void _setMaxTransfers(double value) {
@@ -254,27 +257,25 @@ class _HomePageState extends State<HomePage> {
         child: _initializing
             ? _LoadingState(feedName: _activeFeed.name)
             : wide
-                ? Row(
-                    children: [
-                      SizedBox(width: 420, child: _PlannerPanel(state: this)),
-                      const VerticalDivider(width: 1),
-                      Expanded(child: _TransitMap(center: _mapCenter)),
-                    ],
-                  )
-                : Column(
-                    children: [
-                      SizedBox(height: 260, child: _TransitMap(center: _mapCenter)),
-                      Expanded(child: _PlannerPanel(state: this)),
-                    ],
-                  ),
+            ? Row(
+                children: [
+                  SizedBox(width: 420, child: _PlannerPanel(state: this)),
+                  const VerticalDivider(width: 1),
+                  Expanded(child: _TransitMap(center: _mapCenter)),
+                ],
+              )
+            : Column(
+                children: [
+                  SizedBox(height: 260, child: _TransitMap(center: _mapCenter)),
+                  Expanded(child: _PlannerPanel(state: this)),
+                ],
+              ),
       ),
     );
   }
 
-  LatLng get _mapCenter => LatLng(
-        _activeFeed.centerLatitude,
-        _activeFeed.centerLongitude,
-      );
+  LatLng get _mapCenter =>
+      LatLng(_activeFeed.centerLatitude, _activeFeed.centerLongitude);
 }
 
 class _LoadingState extends StatelessWidget {
@@ -442,10 +443,7 @@ class _NoItinerariesState extends StatelessWidget {
             size: 32,
           ),
           const SizedBox(height: AppSpacing.s),
-          Text(
-            'No itineraries yet',
-            style: theme.textTheme.titleMedium,
-          ),
+          Text('No itineraries yet', style: theme.textTheme.titleMedium),
           const SizedBox(height: AppSpacing.xs),
           Text(
             'Pick origin and destination, then tap Find routes.',
@@ -543,10 +541,7 @@ class _ItineraryCard extends StatelessWidget {
 }
 
 class _FeedSelector extends StatelessWidget {
-  const _FeedSelector({
-    required this.selectedFeed,
-    required this.onChanged,
-  });
+  const _FeedSelector({required this.selectedFeed, required this.onChanged});
 
   final TransitFeed selectedFeed;
   final ValueChanged<TransitFeed> onChanged;
@@ -556,14 +551,9 @@ class _FeedSelector extends StatelessWidget {
     return DropdownButtonFormField<TransitFeed>(
       isExpanded: true,
       decoration: const InputDecoration(labelText: 'Feed'),
-      value: selectedFeed,
+      initialValue: selectedFeed,
       items: kTransitFeeds
-          .map(
-            (feed) => DropdownMenuItem(
-              value: feed,
-              child: Text(feed.name),
-            ),
-          )
+          .map((feed) => DropdownMenuItem(value: feed, child: Text(feed.name)))
           .toList(growable: false),
       onChanged: (feed) {
         if (feed != null) {
@@ -583,10 +573,7 @@ class _TransitMap extends StatelessWidget {
   Widget build(BuildContext context) {
     return MapLibreMap(
       styleString: _fallbackStyle,
-      initialCameraPosition: CameraPosition(
-        target: center,
-        zoom: 12,
-      ),
+      initialCameraPosition: CameraPosition(target: center, zoom: 12),
       myLocationEnabled: true,
       compassEnabled: true,
     );
