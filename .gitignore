@@ -44,3 +44,16 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# App icons are generated from assets/icon/app_icon.svg by
+# tool/generate_app_icon.py at build time. Do not commit the rasterized PNGs.
+/android/app/src/main/res/mipmap-*/ic_launcher.png
+/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-*.png
+/web/favicon.png
+/web/icons/Icon-*.png
+
+# Real GTFS feeds downloaded by tool/fetch_gtfs at runtime. These are large
+# (Toei Bus alone is ~6 MB compressed / ~70 MB unzipped) and re-published
+# frequently by upstream. The small CI-friendly slice lives under
+# assets/sample_toei_train/ and is committed.
+/assets/real_gtfs/

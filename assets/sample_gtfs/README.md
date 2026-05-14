@@ -1,9 +1,15 @@
-# Sample GTFS feed
+# Synthetic GTFS unit-test fixture
 
-A tiny synthetic GTFS feed used as a developer fixture for the transit-planner
-prototype. It is **not** a real network: stop names and coordinates are taken
-from real locations in Bern, Switzerland, but routes, trips, and timings are
-fabricated.
+A tiny synthetic GTFS feed used as a **unit-test fixture** for the Go router.
+It is **not** a real network: stop names and coordinates are taken from real
+locations in Bern, Switzerland, but routes, trips, and timings are fabricated.
+
+For real-world integration the project uses Tokyo Metropolitan Bureau of
+Transportation (Toei) GTFS-JP feeds via ODPT — see
+[`../sample_toei_train/`](../sample_toei_train/) and the top-level
+[README](../../README.md). This synthetic fixture remains useful because
+it is small enough to write expected itineraries by hand, which is what
+[`router/router_test.go`](../../router/router_test.go) actually does.
 
 ## Goals
 

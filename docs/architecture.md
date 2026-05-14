@@ -52,8 +52,11 @@ be updated.
                              v
 +--------------------------------------------------------------+
 |                       On-device data                         |
-|  assets/sample_gtfs/  - dev fixture (10 stops, 3 routes)     |
-|  app documents dir    - downloaded GTFS + built indexes      |
+|  assets/sample_toei_train/ - real Toei feed (149 stops,      |
+|                              6 lines, 5.6k trips) -- CI/dev  |
+|  assets/sample_gtfs/       - synthetic Bern unit-test feed   |
+|  assets/real_gtfs/         - fetched feeds (gitignored)      |
+|  app documents dir         - downloaded GTFS + built indexes |
 +--------------------------------------------------------------+
 ```
 
@@ -65,7 +68,10 @@ Files referenced above:
   `ItineraryLeg`, `RouteRequest`, `TransitMode`).
 - Router interface: `lib/src/local_router.dart`.
 - Go core: `router/gtfs.go`, `router/router.go`.
-- Sample feed: `assets/sample_gtfs/`.
+- Real GTFS fixture: `assets/sample_toei_train/` (Tokyo Toei subway).
+- Synthetic unit-test fixture: `assets/sample_gtfs/` (Bern).
+- Fetcher tool: `tool/fetch_gtfs/`.
+- Attribution: `LICENSES_THIRD_PARTY.md`.
 
 ## Flutter app
 
@@ -108,22 +114,33 @@ indexing, and the route search itself.
 
 ### GTFS ingest (`router/gtfs.go`)
 
-`LoadGTFS(dir)` reads the minimum subset needed for routing today:
+The parser has two entry points, both backed by an `io/fs.FS` view of the
+feed so the file readers don't care about the source:
+
+- `LoadGTFS(dir)` reads CSV files from a directory.
+- `LoadGTFSZip(path)` reads them directly out of a zip archive — this is the
+  shape the real ODPT feeds ship in, and the path that production code
+  (mobile, eventually FFI) should use.
+
+It reads the minimum subset needed for routing today:
 
 - `stops.txt` (`stop_id`, `stop_name`, `stop_lat`, `stop_lon`).
 - `routes.txt` (`route_id`, `route_short_name`, `route_long_name`,
   `route_type`).
 - `trips.txt` (`route_id`, `service_id`, `trip_id`).
 - `stop_times.txt` (`trip_id`, `arrival_time`, `departure_time`, `stop_id`,
-  `stop_sequence`).
+  `stop_sequence`). Rows where both `arrival_time` and `departure_time` are
+  blank are skipped: in GTFS-JP feeds these mark `timepoint=0` passing-only
+  stops (Toei Train has ~540 of them) and the router boards/alights only at
+  timed stops anyway.
 - `transfers.txt` (`from_stop_id`, `to_stop_id`, optional
   `min_transfer_time`); optional file.
 
 Times are stored as seconds-from-midnight ints. The parser is permissive about
-extra columns but does not currently understand `calendar.txt`,
-`calendar_dates.txt`, `frequencies.txt`, or `shapes.txt`. The sample feed in
-`assets/sample_gtfs/` includes a `calendar.txt` and a `calendar_dates.txt` so
-that ingest improvements can be tested against a known fixture.
+extra columns and tolerates a UTF-8 BOM on the first column header. It does
+not currently understand `calendar.txt`, `calendar_dates.txt`,
+`frequencies.txt`, `shapes.txt`, or the GTFS-JP-specific files
+(`translations.txt`, `agency_jp.txt`, `office_jp.txt`).
 
 ### Routing (`router/router.go`)
 
@@ -265,9 +282,12 @@ the Go state outlives a single call.
 - **Battery.** Routing is bursty but doing it on a hot UI thread will be felt.
   All FFI calls must be on a Dart isolate or scheduled off the platform
   thread.
-- **Testing real feeds.** The sample feed catches API regressions but not
-  scale regressions. We will need a periodic CI job that runs against a real
-  feed (e.g. Bern or Zurich) once the pipeline matures.
+- **Testing real feeds.** The synthetic Bern fixture catches API regressions
+  but not scale regressions. The vendored Toei Train feed
+  (`assets/sample_toei_train/`) closes part of that gap — it is real Tokyo
+  data with ~150 stops and ~5 600 trips — but full-network scale (Toei Bus
+  is ~47 000 trips) is still only validated by running `tool/fetch_gtfs`
+  manually.
 
 ## Staged build plan
 
@@ -280,12 +300,16 @@ The plan is intentionally staged so each milestone is shippable on its own.
 - Go RAPTOR core exists and is tested in isolation against synthetic data.
 - CI runs Flutter analyse/test and Go test.
 
-### Milestone 2 - Bundled sample feed (in progress)
+### Milestone 2 - Real GTFS feed (in progress)
 
-- Ship `assets/sample_gtfs/` as a developer fixture.
-- Add architecture documentation (this file).
-- Use the fixture in Go integration tests and as the default feed for manual
-  app testing.
+- Ship `assets/sample_toei_train/` — a vendored real Tokyo Toei subway feed
+  from ODPT — as the CI fixture.
+- Add `tool/fetch_gtfs/` to pull live Toei Bus / Toei Train feeds from the
+  no-API-key public ODPT bucket into the gitignored `assets/real_gtfs/`.
+- Keep `assets/sample_gtfs/` as the small synthetic unit-test fixture (its
+  expected itineraries are hand-written and small enough to reason about).
+- Add architecture documentation (this file) and third-party attribution
+  (`LICENSES_THIRD_PARTY.md`).
 
 ### Milestone 3 - Real router from Flutter
 
@@ -329,7 +353,8 @@ The plan is intentionally staged so each milestone is shippable on its own.
 
 - Start a new feature by reading `router/router_test.go` to understand the
   contract.
-- Treat `assets/sample_gtfs/README.md` as the canonical description of the
-  fixture; if you extend the feed, update both files together.
+- Treat `assets/sample_toei_train/README.md` as the canonical description of
+  the real fixture and `assets/sample_gtfs/README.md` for the synthetic one;
+  if you extend either feed, update its README in the same change.
 - Keep `lib/src/models.dart` and `router/router.go` in lockstep: any new field
   on `Itinerary` or `Leg` must round-trip through the (eventual) FFI codec.

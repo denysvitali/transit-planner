@@ -63,19 +63,43 @@ nix run nixpkgs#flutter -- test
 - Add OSM pedestrian routing for realistic first/last-mile walking.
 - Extend the Go router to McRAPTOR and return Pareto-optimal alternatives.
 
-## Sample data
+## Transit data
 
-A tiny synthetic GTFS feed ships under [`assets/sample_gtfs/`](assets/sample_gtfs/)
-for local development and testing. It contains ten stops around Bern central
-station, three routes (two trams and a bus), three trips per route running
-between 07:00 and 08:22 on weekdays, and a handful of walking transfers.
+The router is wired against **real, no-API-key GTFS feeds** from Japan's
+Public Transportation Open Data Center (ODPT). The first integration covers
+the Tokyo Metropolitan Bureau of Transportation (都営):
 
-Use it from the Go side via:
+- **Toei subway lines** (浅草, 三田, 新宿, 大江戸, 日暮里舎人, 都電荒川) —
+  ~150 stations, ~5 600 trips. Vendored as the CI fixture under
+  [`assets/sample_toei_train/`](assets/sample_toei_train/).
+- **Toei municipal bus network** — ~5 400 stops, ~47 000 trips. Downloaded
+  on demand into `assets/real_gtfs/` (gitignored) via the fetcher tool.
 
-```go
-feed, err := router.LoadGTFS("assets/sample_gtfs")
+Both feeds are CC-BY 4.0 — see
+[`LICENSES_THIRD_PARTY.md`](LICENSES_THIRD_PARTY.md) for the required
+attribution string.
+
+```sh
+go run ./tool/fetch_gtfs -list                  # show known feeds
+go run ./tool/fetch_gtfs -feed toei-bus         # ~6 MB zip
+go run ./tool/fetch_gtfs -feed toei-train       # ~750 KB zip
 ```
 
-See [`assets/sample_gtfs/README.md`](assets/sample_gtfs/README.md) for the
-feed layout, and [`docs/architecture.md`](docs/architecture.md) for how the
-data, the Go routing core, and the Flutter UI fit together.
+Load a feed from Go:
+
+```go
+feed, err := router.LoadGTFSZip("assets/sample_toei_train/Toei-Train-GTFS.zip")
+// or, for an extracted directory of CSVs:
+feed, err = router.LoadGTFS("assets/real_gtfs/toei_bus")
+```
+
+### Synthetic test fixture
+
+A tiny synthetic feed also ships under
+[`assets/sample_gtfs/`](assets/sample_gtfs/) (ten Bern stops, three routes,
+weekday-only service). It exists only as a small, deterministic unit-test
+fixture for [`router/router_test.go`](router/router_test.go); production
+code paths use real GTFS-JP via `LoadGTFSZip`.
+
+See [`docs/architecture.md`](docs/architecture.md) for how the data, the Go
+routing core, and the Flutter UI fit together.

@@ -1,12 +1,13 @@
 package router
 
 import (
+	"archive/zip"
 	"encoding/csv"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -54,20 +55,38 @@ type Feed struct {
 	Transfers []Transfer
 }
 
+// LoadGTFS reads a GTFS feed from a directory containing the standard CSV
+// files (stops.txt, routes.txt, ...).
 func LoadGTFS(dir string) (*Feed, error) {
-	stops, err := loadStops(filepath.Join(dir, "stops.txt"))
+	return loadFeed(os.DirFS(dir))
+}
+
+// LoadGTFSZip reads a GTFS feed directly from a zip archive. Useful for the
+// real-world feeds published by agencies (e.g. ODPT for Tokyo's Toei lines)
+// without having to extract them to disk first.
+func LoadGTFSZip(path string) (*Feed, error) {
+	r, err := zip.OpenReader(path)
 	if err != nil {
 		return nil, err
 	}
-	routes, err := loadRoutes(filepath.Join(dir, "routes.txt"))
+	defer r.Close()
+	return loadFeed(&r.Reader)
+}
+
+func loadFeed(fsys fs.FS) (*Feed, error) {
+	stops, err := loadStops(fsys)
 	if err != nil {
 		return nil, err
 	}
-	trips, err := loadTrips(filepath.Join(dir, "trips.txt"))
+	routes, err := loadRoutes(fsys)
 	if err != nil {
 		return nil, err
 	}
-	stopTimes, err := loadStopTimes(filepath.Join(dir, "stop_times.txt"))
+	trips, err := loadTrips(fsys)
+	if err != nil {
+		return nil, err
+	}
+	stopTimes, err := loadStopTimes(fsys)
 	if err != nil {
 		return nil, err
 	}
@@ -76,8 +95,8 @@ func LoadGTFS(dir string) (*Feed, error) {
 		trip.StopTimes = times
 		trips[tripID] = trip
 	}
-	transfers, err := loadTransfers(filepath.Join(dir, "transfers.txt"))
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	transfers, err := loadTransfers(fsys)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
 	return &Feed{
@@ -88,8 +107,8 @@ func LoadGTFS(dir string) (*Feed, error) {
 	}, nil
 }
 
-func loadStops(path string) (map[string]Stop, error) {
-	rows, err := readCSV(path)
+func loadStops(fsys fs.FS) (map[string]Stop, error) {
+	rows, err := readCSV(fsys, "stops.txt")
 	if err != nil {
 		return nil, err
 	}
@@ -113,8 +132,8 @@ func loadStops(path string) (map[string]Stop, error) {
 	return stops, nil
 }
 
-func loadRoutes(path string) (map[string]Route, error) {
-	rows, err := readCSV(path)
+func loadRoutes(fsys fs.FS) (map[string]Route, error) {
+	rows, err := readCSV(fsys, "routes.txt")
 	if err != nil {
 		return nil, err
 	}
@@ -131,8 +150,8 @@ func loadRoutes(path string) (map[string]Route, error) {
 	return routes, nil
 }
 
-func loadTrips(path string) (map[string]Trip, error) {
-	rows, err := readCSV(path)
+func loadTrips(fsys fs.FS) (map[string]Trip, error) {
+	rows, err := readCSV(fsys, "trips.txt")
 	if err != nil {
 		return nil, err
 	}
@@ -147,14 +166,21 @@ func loadTrips(path string) (map[string]Trip, error) {
 	return trips, nil
 }
 
-func loadStopTimes(path string) (map[string][]StopTime, error) {
-	rows, err := readCSV(path)
+func loadStopTimes(fsys fs.FS) (map[string][]StopTime, error) {
+	rows, err := readCSV(fsys, "stop_times.txt")
 	if err != nil {
 		return nil, err
 	}
 	times := map[string][]StopTime{}
 	for _, row := range rows {
-		arrival, err := parseGTFSTime(row["arrival_time"])
+		// Real feeds (e.g. Toei) leave arrival_time and departure_time blank
+		// for non-timepoint intermediate stops. Skip them so the trip pattern
+		// still loads; the router boards/alights only at timed stops.
+		if row["arrival_time"] == "" && row["departure_time"] == "" {
+			continue
+		}
+		arrivalRaw := firstNonEmpty(row["arrival_time"], row["departure_time"])
+		arrival, err := parseGTFSTime(arrivalRaw)
 		if err != nil {
 			return nil, err
 		}
@@ -181,8 +207,8 @@ func loadStopTimes(path string) (map[string][]StopTime, error) {
 	return times, nil
 }
 
-func loadTransfers(path string) ([]Transfer, error) {
-	rows, err := readCSV(path)
+func loadTransfers(fsys fs.FS) ([]Transfer, error) {
+	rows, err := readCSV(fsys, "transfers.txt")
 	if err != nil {
 		return nil, err
 	}
@@ -198,8 +224,8 @@ func loadTransfers(path string) ([]Transfer, error) {
 	return transfers, nil
 }
 
-func readCSV(path string) ([]map[string]string, error) {
-	file, err := os.Open(path)
+func readCSV(fsys fs.FS, name string) ([]map[string]string, error) {
+	file, err := fsys.Open(name)
 	if err != nil {
 		return nil, err
 	}
@@ -213,6 +239,11 @@ func readCSV(path string) ([]map[string]string, error) {
 	}
 	for i := range header {
 		header[i] = strings.TrimSpace(header[i])
+	}
+	// Strip a UTF-8 BOM from the first column header — some GTFS-JP feeds
+	// emit one, which otherwise turns "stop_id" into "\ufeffstop_id".
+	if len(header) > 0 {
+		header[0] = strings.TrimPrefix(header[0], "\ufeff")
 	}
 
 	var rows []map[string]string
