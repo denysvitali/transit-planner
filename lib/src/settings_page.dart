@@ -76,9 +76,54 @@ class SettingsPage extends StatelessWidget {
                 );
               },
             ),
+            const SizedBox(height: AppSpacing.l),
+            const _AboutSection(),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// About / attributions section. CC-BY 4.0 requires us to surface the Toei
+/// attribution string anywhere Toei data is rendered; the canonical wording
+/// lives in LICENSES_THIRD_PARTY.md at the repo root.
+class _AboutSection extends StatelessWidget {
+  const _AboutSection();
+
+  static const _toeiAttribution =
+      'Transit data © 東京都交通局 (Tokyo Metropolitan Bureau of '
+      'Transportation), CC-BY 4.0, via the Public Transportation Open Data '
+      'Center (ODPT).';
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'About',
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.s),
+        Text('Transit data sources', style: theme.textTheme.titleMedium),
+        const SizedBox(height: AppSpacing.xs),
+        SelectableText(
+          _toeiAttribution,
+          style: theme.textTheme.bodyMedium,
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          'See LICENSES_THIRD_PARTY.md in the source tree for the full list '
+          'of bundled and downloaded datasets and their licences.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
     );
   }
 }

@@ -1,26 +1,34 @@
 # router/cffi
 
-C-ABI surface around the transit-planner router. The package is built with
-cgo and exposes two `//export`-annotated functions so that the Flutter app
-can drive the Go router through `dart:ffi`:
+Pure-Go core of the C-ABI / `dart:ffi` surface that the Flutter app uses to
+drive the transit-planner router. The package exposes a single entrypoint:
 
-- `TP_Route(reqJSON *C.char) *C.char` — accepts a JSON request and returns a
-  JSON response. The returned pointer is allocated by cgo and **must** be
-  freed by the caller via `TP_Free`.
-- `TP_Free(p *C.char)` — releases a string previously returned by `TP_Route`.
+- `RouteJSON(req string) string` — accepts a JSON request, returns a JSON
+  response. All errors are encoded as `{"error": "..."}`; the function never
+  panics.
 
-The package is gated behind the `cgo` build tag. When cgo is disabled
-(`CGO_ENABLED=0`) a stub file keeps the package importable but exports
-nothing, so `go build ./...` and `go test ./...` keep working on CI images
-that do not ship a C toolchain.
+The package is **pure Go** — no `import "C"`, no cgo build tag — so it is
+exercised by the default `go test ./...` flow on CI without needing a C
+toolchain. The thin cgo wrapper that produces the actual shared library
+lives in [`../../cmd/libtransitplanner`](../../cmd/libtransitplanner).
 
 ## JSON contract
 
-Request:
+Request — set exactly one of `feedDir` or `feedZip`:
 
 ```json
 {
-  "feedDir": "/path/to/gtfs",
+  "feedZip": "/path/to/Toei-Train-GTFS.zip",
+  "from": "101",
+  "to": "108",
+  "departure": 18000,
+  "maxTransfers": 0
+}
+```
+
+```json
+{
+  "feedDir": "/path/to/extracted/gtfs",
   "from": "A",
   "to": "B",
   "departure": 28800,
@@ -60,78 +68,34 @@ feed lifecycle.
 
 ## Building the shared library
 
-`go build -buildmode=c-shared` requires a `package main`. The cffi package
-itself is intentionally a normal library package so it stays importable from
-ordinary Go code (and from the test suite). To produce the actual `.so` /
-`.dylib` / `.dll` consumed by Flutter, create a thin main wrapper that
-re-exports the two cgo entrypoints. A minimal wrapper looks like:
-
-```go
-// build/libtransitplanner/main.go
-package main
-
-/*
-#include <stdlib.h>
-*/
-import "C"
-
-import (
-	"unsafe"
-
-	"github.com/denysvitali/transit-planner/router/cffi"
-)
-
-//export TP_Route
-func TP_Route(reqJSON *C.char) *C.char {
-	var raw string
-	if reqJSON != nil {
-		raw = C.GoString(reqJSON)
-	}
-	return C.CString(cffi.RouteJSON(raw))
-}
-
-//export TP_Free
-func TP_Free(p *C.char) {
-	if p == nil {
-		return
-	}
-	C.free(unsafe.Pointer(p))
-}
-
-func main() {}
-```
-
-Then build:
+The cgo wrapper in [`cmd/libtransitplanner`](../../cmd/libtransitplanner)
+re-exports `TP_Route` and `TP_Free` as C symbols. Build it for the host:
 
 ```sh
 # Linux
 CGO_ENABLED=1 go build \
   -buildmode=c-shared \
   -o build/libtransit_planner.so \
-  ./build/libtransitplanner
+  ./cmd/libtransitplanner
 
 # macOS
 CGO_ENABLED=1 go build \
   -buildmode=c-shared \
   -o build/libtransit_planner.dylib \
-  ./build/libtransitplanner
+  ./cmd/libtransitplanner
 
 # Windows (from a MinGW shell)
 CGO_ENABLED=1 go build \
   -buildmode=c-shared \
   -o build/transit_planner.dll \
-  ./build/libtransitplanner
+  ./cmd/libtransitplanner
 ```
 
-The build also produces a `libtransit_planner.h` header next to the library
-which the Flutter side can use as a reference when wiring the `dart:ffi`
-bindings.
+The build also produces a `libtransit_planner.h` header next to the library;
+the Flutter side can use it as a reference when wiring `dart:ffi` bindings.
 
-The `//export TP_Route` and `//export TP_Free` directives also live on the
-matching functions inside this package. They serve as the canonical
-declaration of the FFI surface; the main wrapper above simply forwards to
-them through the package's pure-Go `RouteJSON` helper to avoid duplicate C
-symbols at link time.
+For Android / iOS, run the same command under the NDK / Xcode toolchains
+with the appropriate `CC`, `CGO_ENABLED=1`, and per-ABI `GOOS` / `GOARCH`.
 
 ## Loading from Flutter
 
@@ -142,9 +106,11 @@ for every pointer returned by `TP_Route` to avoid leaking memory.
 ## Running the tests
 
 ```sh
-# Default CI flow — cgo disabled, the stub is compiled.
-CGO_ENABLED=0 go test ./...
-
-# Full FFI test (requires a C toolchain such as gcc or clang).
-CGO_ENABLED=1 go test ./router/cffi
+go test ./router/cffi          # the routing surface (no cgo needed)
+go build ./cmd/libtransitplanner  # smoke test that the wrapper still compiles
 ```
+
+The integration test `TestRouteJSONFeedZipToei` loads the vendored Toei
+subway feed from `assets/sample_toei_train/Toei-Train-GTFS.zip` and routes
+through it via the JSON surface — i.e. the exact code path the Flutter FFI
+will eventually exercise.

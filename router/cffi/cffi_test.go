@@ -1,5 +1,3 @@
-//go:build cgo
-
 package cffi
 
 import (
@@ -45,10 +43,10 @@ B,C,2,60
 	return dir
 }
 
-// TestRouteJSONRoundTrip exercises the pure-Go core that powers TP_Route.
-// We can't `import "C"` from a _test.go file in a package that already uses
-// cgo, so the test drives the JSON helper instead. This still validates the
-// full request → response shape that the FFI exposes.
+// TestRouteJSONRoundTrip drives the JSON entry point that powers the FFI
+// surface. The cgo wrapper in cmd/libtransitplanner only forwards strings to
+// and from this function, so testing it here covers the production path
+// without needing a C toolchain on CI.
 func TestRouteJSONRoundTrip(t *testing.T) {
 	dir := writeMiniFeed(t)
 
@@ -87,6 +85,51 @@ func TestRouteJSONRoundTrip(t *testing.T) {
 	}
 	if resp.Legs[1].Mode != "walk" {
 		t.Fatalf("middle leg mode = %q, want walk", resp.Legs[1].Mode)
+	}
+}
+
+// TestRouteJSONFeedZipToei wires the JSON surface through the real Toei feed
+// vendored under assets/sample_toei_train/. It only checks that the request
+// is accepted and a JSON response is produced — the underlying router is
+// already covered by router/router_test.go. The point here is to prove that
+// "load a GTFS zip and route through the FFI" works end-to-end.
+func TestRouteJSONFeedZipToei(t *testing.T) {
+	const zipPath = "../../assets/sample_toei_train/Toei-Train-GTFS.zip"
+	if _, err := os.Stat(zipPath); err != nil {
+		t.Skipf("vendored Toei zip missing: %v", err)
+	}
+
+	// Asakusa Line stop_ids 101..127 from west (西馬込) to east (押上). We
+	// pick a same-line origin/destination so the test does not depend on
+	// transfer modelling; any non-zero arrival time and any non-empty legs
+	// slice is enough to demonstrate the wiring.
+	req := routeRequest{
+		FeedZip:      zipPath,
+		From:         "101",
+		To:           "108",
+		Departure:    5 * 3600,
+		MaxTransfers: 0,
+	}
+	reqBytes, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	respJSON := RouteJSON(string(reqBytes))
+
+	var maybeErr errorResponse
+	if err := json.Unmarshal([]byte(respJSON), &maybeErr); err == nil && maybeErr.Error != "" {
+		t.Fatalf("Toei route returned error: %s", maybeErr.Error)
+	}
+	var resp routeResponse
+	if err := json.Unmarshal([]byte(respJSON), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v (raw=%s)", err, respJSON)
+	}
+	if resp.Arrival <= 5*3600 {
+		t.Fatalf("arrival = %d, expected > departure (%d)", resp.Arrival, 5*3600)
+	}
+	if len(resp.Legs) == 0 {
+		t.Fatal("expected at least one leg in the Toei route")
 	}
 }
 
@@ -133,5 +176,28 @@ func TestRouteJSONEmptyPayload(t *testing.T) {
 	}
 	if resp.Error == "" {
 		t.Fatal("expected non-empty error message for empty payload")
+	}
+}
+
+func TestRouteJSONRejectsBothFeedSources(t *testing.T) {
+	req := routeRequest{
+		FeedDir: "/tmp/whatever",
+		FeedZip: "/tmp/whatever.zip",
+		From:    "A",
+		To:      "B",
+	}
+	reqBytes, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	respJSON := RouteJSON(string(reqBytes))
+
+	var resp errorResponse
+	if err := json.Unmarshal([]byte(respJSON), &resp); err != nil {
+		t.Fatalf("unmarshal error response: %v", err)
+	}
+	if resp.Error == "" {
+		t.Fatal("expected error when both feedDir and feedZip are set")
 	}
 }

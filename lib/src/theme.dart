@@ -23,6 +23,20 @@ class AppPalette {
   static const Color surfaceDark = Color(0xFF151A20);
 }
 
+// Font fallbacks consulted after the default font fails to map a glyph.
+// On Android/iOS the system already covers CJK via its built-in fonts, but
+// Flutter web ships only Roboto by default and would render Japanese stop
+// names as tofu boxes. Naming these families (in order) lets the browser
+// resolve them when present without us having to bundle the actual font.
+const List<String> _kJapaneseFontFallback = <String>[
+  'Noto Sans JP',
+  'Noto Sans CJK JP',
+  'Hiragino Sans',
+  'Yu Gothic',
+  'Meiryo',
+  'sans-serif',
+];
+
 ThemeData buildTransitTheme(Brightness brightness) {
   final dark = brightness == Brightness.dark;
   final scheme = ColorScheme.fromSeed(
@@ -39,6 +53,7 @@ ThemeData buildTransitTheme(Brightness brightness) {
   ).textTheme.apply(
         bodyColor: dark ? Colors.white : AppPalette.ink,
         displayColor: dark ? Colors.white : AppPalette.ink,
+        fontFamilyFallback: _kJapaneseFontFallback,
       );
 
   return ThemeData(

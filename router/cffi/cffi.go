@@ -1,30 +1,31 @@
-//go:build cgo
-
-// Package cffi exposes a C-ABI surface around the transit-planner router so
-// that the Flutter app can drive it through dart:ffi. The package is intended
-// to be built with `go build -buildmode=c-shared` to produce a dynamic library
-// (.so / .dylib / .dll) plus the matching C header.
+// Package cffi is the pure-Go core that powers the C-ABI / dart:ffi surface
+// of the transit-planner router. It accepts JSON requests and returns JSON
+// responses, so the actual cgo wrapper (in cmd/libtransitplanner) stays
+// tiny — it only forwards C strings to and from RouteJSON.
 //
-// All exported functions exchange JSON encoded payloads to keep the FFI
-// boundary trivial: the caller is responsible for releasing every C string
-// returned by this package via TP_Free.
+// Keeping this package pure-Go means it is exercised by the default
+// `go test ./...` flow without needing a C toolchain in CI, and it is
+// importable from the rest of the Go codebase (e.g. the CLI router) without
+// pulling cgo in transitively.
 package cffi
-
-/*
-#include <stdlib.h>
-*/
-import "C"
 
 import (
 	"encoding/json"
-	"unsafe"
+	"errors"
 
 	"github.com/denysvitali/transit-planner/router"
 )
 
-// routeRequest is the JSON payload accepted by TP_Route.
+// routeRequest is the JSON payload accepted by the FFI entry point.
+//
+// Exactly one of FeedDir and FeedZip must be set:
+//   - FeedDir points at a directory of extracted GTFS CSV files.
+//   - FeedZip points at a zip archive in the shape published by agencies
+//     (e.g. the ODPT Toei feeds). The mobile app ships zips as assets so
+//     this is the production path.
 type routeRequest struct {
-	FeedDir      string `json:"feedDir"`
+	FeedDir      string `json:"feedDir,omitempty"`
+	FeedZip      string `json:"feedZip,omitempty"`
 	From         string `json:"from"`
 	To           string `json:"to"`
 	Departure    int    `json:"departure"`
@@ -42,36 +43,22 @@ type legPayload struct {
 	Arrival   int         `json:"arrival"`
 }
 
-// routeResponse is the success payload returned by TP_Route.
+// routeResponse is the success payload returned by RouteJSON.
 type routeResponse struct {
 	Arrival   int          `json:"arrival"`
 	Transfers int          `json:"transfers"`
 	Legs      []legPayload `json:"legs"`
 }
 
-// errorResponse is returned whenever TP_Route cannot produce an itinerary.
+// errorResponse is returned whenever RouteJSON cannot produce an itinerary.
 type errorResponse struct {
 	Error string `json:"error"`
 }
 
-// TP_Route computes a single itinerary between two stops in the GTFS feed
-// stored at the directory referenced by the request. Both the input and the
-// output are JSON strings; the returned C string must be released by the
-// caller via TP_Free.
-//
-//export TP_Route
-func TP_Route(reqJSON *C.char) *C.char {
-	if reqJSON == nil {
-		return C.CString(RouteJSON(""))
-	}
-	return C.CString(RouteJSON(C.GoString(reqJSON)))
-}
-
-// RouteJSON is the pure-Go core of TP_Route. It is exported so that the
-// c-shared wrapper in cmd/libtransitplanner can reuse it, and so that tests
-// can exercise the routing logic without having to import "C" (the Go
-// toolchain forbids cgo imports inside _test.go files that share their
-// package with cgo code).
+// RouteJSON is the single entrypoint of the FFI surface. It loads the
+// requested GTFS feed and runs a route query against it. Both input and
+// output are JSON strings; on any failure the response is shaped like
+// {"error": "..."}, never an empty string.
 func RouteJSON(raw string) string {
 	if raw == "" {
 		return errorJSON("request is null")
@@ -82,7 +69,7 @@ func RouteJSON(raw string) string {
 		return errorJSON("invalid request JSON: " + err.Error())
 	}
 
-	feed, err := router.LoadGTFS(req.FeedDir)
+	feed, err := loadFeed(req)
 	if err != nil {
 		return errorJSON("load feed: " + err.Error())
 	}
@@ -119,15 +106,17 @@ func RouteJSON(raw string) string {
 	return string(data)
 }
 
-// TP_Free releases a C string previously returned by this package. It is safe
-// to invoke with a nil pointer.
-//
-//export TP_Free
-func TP_Free(p *C.char) {
-	if p == nil {
-		return
+func loadFeed(req routeRequest) (*router.Feed, error) {
+	switch {
+	case req.FeedZip != "" && req.FeedDir != "":
+		return nil, errors.New("specify exactly one of feedZip or feedDir")
+	case req.FeedZip != "":
+		return router.LoadGTFSZip(req.FeedZip)
+	case req.FeedDir != "":
+		return router.LoadGTFS(req.FeedDir)
+	default:
+		return nil, errors.New("feedDir or feedZip is required")
 	}
-	C.free(unsafe.Pointer(p))
 }
 
 func errorJSON(message string) string {

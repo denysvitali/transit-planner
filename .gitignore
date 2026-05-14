@@ -57,3 +57,7 @@ app.*.map.json
 # frequently by upstream. The small CI-friendly slice lives under
 # assets/sample_toei_train/ and is committed.
 /assets/real_gtfs/
+
+# Shared library output from cmd/libtransitplanner (c-shared build).
+/build/libtransit_planner.*
+/build/transit_planner.*
