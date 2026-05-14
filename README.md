@@ -79,33 +79,53 @@ The script needs `rsvg-convert` (Debian/Ubuntu: `librsvg2-bin`) and Pillow
 ## Transit data
 
 The router is wired against **real, no-API-key GTFS feeds** organised by ISO
-3166-1 alpha-2 country code so multi-operator queries (e.g. Tokyo↔Osaka) can
-be planned by fetching every feed for a country and merging them at load
-time.
+3166-1 alpha-2 country code so multi-operator queries can be planned by
+fetching every known feed for a country and merging them at load time.
 
 Sources are open and license-tagged:
 
 - **[Mobility Database](https://mobilitydatabase.org)** — the canonical
   global catalog (6000+ GTFS feeds across 99+ countries; their CSV at
   `https://files.mobilitydatabase.org/feeds_v2.csv` is what we cross-check
-  against). Most of the Kansai-region feeds below resolve to its
-  `api.gtfs-data.jp` mirror.
+  against). The fetcher can also use this catalog directly with `-complete`
+  to build fuller no-key country bundles for fragmented countries such as
+  Japan and Italy.
 - **[ODPT public bucket](https://www.odpt.org)** — `api-public.odpt.org`
   hosts the Tokyo Metropolitan Bureau of Transportation feeds (CC-BY 4.0).
+- **[opentransportdata.swiss](https://opentransportdata.swiss)** — official
+  nationwide Swiss static GTFS for the current timetable year.
+- **Italian regional and city portals** — official no-key GTFS from Rome,
+  Milan, Lombardy/Trenord, Tuscany, and Trentino.
 
 Currently catalogued (no API key required):
 
 | Country | Region | Feeds |
 |---------|--------|-------|
+| CH | Nationwide | `ch-aggregate-2026` |
+| IT | Lazio | `it-rome` |
+| IT | Lombardy | `it-milan-atm`, `it-lombardy-trenord` |
+| IT | Tuscany | `it-tuscany-autolinee`, `it-tuscany-trenitalia`, `it-tuscany-tft`, `it-tuscany-toremar`, `it-tuscany-gest`, `it-tuscany-colbus-school`, `it-tuscany-colbus-nonschool`, `it-tuscany-at-school`, `it-tuscany-at-nonschool` |
+| IT | Trentino-Alto Adige | `it-trentino-urban`, `it-trentino-extraurban` |
 | JP | Tokyo | `toei-bus`, `toei-train` |
 | JP | Hyogo | `kobe-shiokaze`, `kobe-satoyama`, `himeji-ieshima`, `takarazuka-runrunbus`, `nishinomiya-sakurayamanami` |
 | JP | Nara | `yamatokoriyama-kingyobus` |
 | JP | Wakayama | `rinkan-koyasan` |
 | JP | Ishikawa | `kanazawa-flatbus`, `kanazawa-hakusan-meguru`, `kanazawa-tsubata-bus` |
 
-Major private rail (JR, Tokyo Metro, Hankyu, Hanshin, Nankai, Keihan,
-Kintetsu) and the Shinkansen are only published through ODPT's
-authenticated developer API and are intentionally out of scope here.
+The curated app catalog stays small enough for review and UI selection. For a
+fuller no-key country build, use Mobility Database discovery:
+
+```sh
+go run ./tool/fetch_gtfs -list -country JP -complete
+go run ./tool/fetch_gtfs -country JP -complete
+go run ./tool/fetch_gtfs -country IT -complete
+go run ./tool/fetch_gtfs -country CH -complete
+```
+
+Japan still has important rail gaps: major private rail (JR, Tokyo Metro,
+Hankyu, Hanshin, Nankai, Keihan, Kintetsu) and the Shinkansen may require
+ODPT registration or operator-specific terms, so they are intentionally absent
+from the no-key app catalog unless a redistributable public ZIP exists.
 
 Licences vary per feed — see [`LICENSES_THIRD_PARTY.md`](LICENSES_THIRD_PARTY.md)
 and each downloaded `MANIFEST.json` for the exact attribution string.
@@ -114,7 +134,9 @@ and each downloaded `MANIFEST.json` for the exact attribution string.
 go run ./tool/fetch_gtfs -list                  # show every known feed
 go run ./tool/fetch_gtfs -list -country JP      # filter to one country
 go run ./tool/fetch_gtfs -feed toei-train       # ~750 KB zip
-go run ./tool/fetch_gtfs -country JP            # fetch every JP feed
+go run ./tool/fetch_gtfs -country CH            # fetch the Swiss national feed
+go run ./tool/fetch_gtfs -country IT            # fetch curated Italian feeds
+go run ./tool/fetch_gtfs -country JP -complete  # fetch active no-key JP feeds from Mobility Database
 ```
 
 Downloads land under `assets/real_gtfs/<country>/<feed>/<feed>.zip` with a

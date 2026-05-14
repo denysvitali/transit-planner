@@ -4,6 +4,8 @@ import 'package:transit_planner/src/feed_catalog.dart';
 void main() {
   test('country network expands to concrete feeds', () {
     final japan = findFeedById('jp-public-no-key');
+    final switzerland = findFeedById('ch-national');
+    final italy = findFeedById('it-public-regional');
 
     expect(japan, isNotNull);
     expect(japan!.isCollection, isTrue);
@@ -26,6 +28,19 @@ void main() {
         'rinkan-koyasan',
         'jbda-akashicity-tacobustacobusmini',
         'jbda-higashiomicity-higasiohmisicommunitybus',
+      ]),
+    );
+    expect(componentFeedsFor(switzerland!).map((feed) => feed.id), [
+      'ch-aggregate-2026',
+    ]);
+    expect(
+      componentFeedsFor(italy!).map((feed) => feed.id),
+      containsAll([
+        'it-rome',
+        'it-milan-atm',
+        'it-lombardy-trenord',
+        'it-tuscany-autolinee',
+        'it-trentino-extraurban',
       ]),
     );
   });
@@ -52,6 +67,26 @@ void main() {
         'jbda-omihachimancity-akakonbus',
       ]),
     );
+  });
+
+  test('Italian regional networks expand to official component feeds', () {
+    final tuscany = findFeedById('it-tuscany-public')!;
+    final trentino = findFeedById('it-trentino-public')!;
+
+    expect(
+      componentFeedsFor(tuscany).map((feed) => feed.id),
+      containsAll([
+        'it-tuscany-trenitalia',
+        'it-tuscany-tft',
+        'it-tuscany-toremar',
+        'it-tuscany-gest',
+        'it-tuscany-at-nonschool',
+      ]),
+    );
+    expect(componentFeedsFor(trentino).map((feed) => feed.id), [
+      'it-trentino-urban',
+      'it-trentino-extraurban',
+    ]);
   });
 
   test('single provider feed expands to itself', () {

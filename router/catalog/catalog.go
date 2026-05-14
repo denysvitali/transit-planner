@@ -36,6 +36,14 @@ type NetworkSpec struct {
 func hour(value int) *int { return &value }
 
 var Feeds = map[string]FeedSpec{
+	"ch-aggregate-2026": {
+		ID: "ch-aggregate-2026", Name: "Switzerland national GTFS", Country: "CH", Region: "Nationwide",
+		Description:   "Official nationwide Swiss GTFS static timetable for the current 2026 timetable year.",
+		SourceURL:     "https://data.opentransportdata.swiss/dataset/timetable-2026-gtfs2020/permalink",
+		LocalFileName: "ch-aggregate-2026.zip", Publisher: "Systemaufgaben Kundeninformation SKI+ / opentransportdata.swiss",
+		License: "opentransportdata.swiss terms of use", CenterLatitude: 46.8182, CenterLongitude: 8.2275,
+		Attribution: "Transit data © opentransportdata.swiss / Systemaufgaben Kundeninformation SKI+, used under the opentransportdata.swiss terms of use.",
+	},
 	"toei-bus": {
 		ID: "toei-bus", Name: "Tokyo Toei Bus", Country: "JP", Region: "Tokyo",
 		Description:   "Tokyo Metropolitan Bureau of Transportation municipal bus routes.",
@@ -103,6 +111,21 @@ var Feeds = map[string]FeedSpec{
 	"jbda-yamatotakadacity-communitybuskibougou":   mobilityFeed("jbda-yamatotakadacity-communitybuskibougou", "Yamatotakada Kibou Bus", "Nara Prefecture", "大和高田市", "CC-BY-4.0", "https://files.mobilitydatabase.org/jbda-yamatotakadacity-communitybuskibougou/latest.zip", "Yamatotakada Kibou community bus, mirrored by Mobility Database.", 34.502817, 135.742643),
 	"jbda-higashiomicity-higasiohmisicommunitybus": mobilityFeed("jbda-higashiomicity-higasiohmisicommunitybus", "Higashiomi Chokotto Bus", "Shiga Prefecture", "東近江市", "CC-BY-4.0", "https://files.mobilitydatabase.org/jbda-higashiomicity-higasiohmisicommunitybus/latest.zip", "Higashiomi Chokotto Bus, mirrored by Mobility Database.", 35.129049, 136.248841),
 	"jbda-omihachimancity-akakonbus":               mobilityFeed("jbda-omihachimancity-akakonbus", "Omihachiman Akakon Bus", "Shiga Prefecture", "近江八幡市", "CC-BY-4.0", "https://files.mobilitydatabase.org/jbda-omihachimancity-akakonbus/latest.zip", "Omihachiman Akakon Bus, mirrored by Mobility Database.", 35.135921, 136.096512),
+
+	"it-lombardy-trenord":         italyFeed("it-lombardy-trenord", "Lombardy Trenord rail", "Lombardy", "Trenord", "CC-BY-4.0", "https://www.dati.lombardia.it/download/3z4k-mxz9/application%2Fzip", "Regional rail GTFS for Lombardy / Trenord services.", 45.4642, 9.19),
+	"it-milan-atm":                italyFeed("it-milan-atm", "Milan urban GTFS", "Lombardy", "Comune di Milano / ATM / AMAT", "CC-BY-4.0", "https://files.mobilitydatabase.org/mdb-2666/latest.zip", "Milan urban public transport GTFS mirrored by Mobility Database because the official direct file can be region-restricted.", 45.4642, 9.19),
+	"it-rome":                     italyFeed("it-rome", "Rome public transport GTFS", "Lazio", "Roma Servizi per la Mobilità", "CC-BY-SA", "https://dati.comune.roma.it/catalog/dataset/a7dadb4a-66ae-4eff-8ded-a102064702ba/resource/266d82e1-ba53-4510-8a81-370880c4678f/download/rome_static_gtfs.zip", "Daily static GTFS for Rome public transport.", 41.9028, 12.4964),
+	"it-trentino-extraurban":      italyFeed("it-trentino-extraurban", "Trentino extraurban GTFS", "Trentino-Alto Adige", "Trentino Trasporti", "CC-BY-4.0", "https://www.trentinotrasporti.it/opendata/google_transit_extraurbano_tte.zip", "Extraurban GTFS for Trentino public transport.", 46.0667, 11.1211),
+	"it-trentino-urban":           italyFeed("it-trentino-urban", "Trentino urban GTFS", "Trentino-Alto Adige", "Trentino Trasporti", "CC-BY-4.0", "https://www.trentinotrasporti.it/opendata/google_transit_urbano_tte.zip", "Urban GTFS for Trentino public transport.", 46.0667, 11.1211),
+	"it-tuscany-autolinee":        italyFeed("it-tuscany-autolinee", "Tuscany Autolinee Toscane", "Tuscany", "Regione Toscana / Autolinee Toscane", "CC-BY-4.0", "https://regionetoscana.smartregion.toscana.it/mobility/artifacts/gtfs", "Autolinee Toscane regional bus GTFS from the official Tuscany mobility endpoint.", 43.7711, 11.2486),
+	"it-tuscany-colbus-nonschool": italyFeed("it-tuscany-colbus-nonschool", "Tuscany Colbus non-school", "Tuscany", "Regione Toscana / Colbus", "CC-BY-4.0", "https://dati.toscana.it/dataset/8bb8f8fe-fe7d-41d0-90dc-49f2456180d1/resource/61fada72-e2de-4dee-aa23-66629152fa0d/download/02-colbusnonscolastico.gtfs", "Colbus non-school bus GTFS in the Florence metropolitan area.", 43.7711, 11.2486),
+	"it-tuscany-colbus-school":    italyFeed("it-tuscany-colbus-school", "Tuscany Colbus school", "Tuscany", "Regione Toscana / Colbus", "CC-BY-4.0", "https://dati.toscana.it/dataset/8bb8f8fe-fe7d-41d0-90dc-49f2456180d1/resource/5fb6d2bd-8146-456a-91fe-23009ffae253/download/01-colbusscolastico.gtfs", "Colbus school bus GTFS in the Florence metropolitan area.", 43.7711, 11.2486),
+	"it-tuscany-gest":             italyFeed("it-tuscany-gest", "Florence tram GTFS", "Tuscany", "Regione Toscana / GEST", "CC-BY-4.0", "https://dati.toscana.it/dataset/8bb8f8fe-fe7d-41d0-90dc-49f2456180d1/resource/1f62d551-65f4-49f8-9a99-e19b02077be3/download/gest.gtfs", "Florence tram GTFS from Regione Toscana.", 43.7711, 11.2486),
+	"it-tuscany-tft":              italyFeed("it-tuscany-tft", "Tuscany TFT rail GTFS", "Tuscany", "Regione Toscana / Trasporto Ferroviario Toscano", "CC-BY-4.0", "https://dati.toscana.it/dataset/8bb8f8fe-fe7d-41d0-90dc-49f2456180d1/resource/59aeacbc-99ee-410b-ac1e-622b5574a666/download/tft.gtfs", "Trasporto Ferroviario Toscano rail GTFS from Regione Toscana.", 43.4633, 11.8796),
+	"it-tuscany-toremar":          italyFeed("it-tuscany-toremar", "Tuscany Toremar ferries GTFS", "Tuscany", "Regione Toscana / Toremar", "CC-BY-4.0", "https://dati.toscana.it/dataset/8bb8f8fe-fe7d-41d0-90dc-49f2456180d1/resource/56539a5a-e0be-49eb-b3ac-052a42ad0de0/download/toremar.gtfs", "Toremar ferry GTFS for Tuscany coastal and island services.", 42.8129, 10.3167),
+	"it-tuscany-trenitalia":       italyFeed("it-tuscany-trenitalia", "Tuscany Trenitalia regional rail", "Tuscany", "Regione Toscana / Trenitalia", "CC-BY-4.0", "https://dati.toscana.it/dataset/8bb8f8fe-fe7d-41d0-90dc-49f2456180d1/resource/4f85393b-357d-443d-8378-65de4198505f/download/trenitalia.gtfs", "Trenitalia regional rail GTFS for Tuscany.", 43.7711, 11.2486),
+	"it-tuscany-at-nonschool":     italyFeed("it-tuscany-at-nonschool", "Tuscany Autolinee non-school", "Tuscany", "Regione Toscana / Autolinee Toscane", "CC-BY-4.0", "https://dati.toscana.it/dataset/8bb8f8fe-fe7d-41d0-90dc-49f2456180d1/resource/6969571a-96d7-490d-a944-17af386717b6/download/04-atnonscolastico.gtfs", "Autolinee Toscane non-school bus GTFS in the Florence metropolitan area.", 43.7711, 11.2486),
+	"it-tuscany-at-school":        italyFeed("it-tuscany-at-school", "Tuscany Autolinee school", "Tuscany", "Regione Toscana / Autolinee Toscane", "CC-BY-4.0", "https://dati.toscana.it/dataset/8bb8f8fe-fe7d-41d0-90dc-49f2456180d1/resource/8b38e763-e349-404c-a274-442312f7e3b2/download/03-atscolastico.gtfs", "Autolinee Toscane school bus GTFS in the Florence metropolitan area.", 43.7711, 11.2486),
 }
 
 func communityBus(id, name, region, publisher, license, url, description string, lat, lon float64) FeedSpec {
@@ -120,6 +143,15 @@ func mobilityFeed(id, name, region, publisher, license, url, description string,
 		SourceURL: url, LocalFileName: id + ".zip", Description: description,
 		CenterLatitude: lat, CenterLongitude: lon,
 		Attribution: "Transit data © " + publisher + ", " + license + "; mirrored by Mobility Database.",
+	}
+}
+
+func italyFeed(id, name, region, publisher, license, url, description string, lat, lon float64) FeedSpec {
+	return FeedSpec{
+		ID: id, Name: name, Country: "IT", Region: region, Publisher: publisher, License: license,
+		SourceURL: url, LocalFileName: id + ".zip", Description: description,
+		CenterLatitude: lat, CenterLongitude: lon,
+		Attribution: "Transit data © " + publisher + ", " + license + ".",
 	}
 }
 
@@ -163,7 +195,61 @@ var japanPublicFeedIDs = append(append([]string{
 	"toei-bus",
 }, hokurikuPublicFeedIDs...), kansaiPublicFeedIDs...)
 
+var tuscanyPublicFeedIDs = []string{
+	"it-tuscany-autolinee",
+	"it-tuscany-trenitalia",
+	"it-tuscany-tft",
+	"it-tuscany-toremar",
+	"it-tuscany-gest",
+	"it-tuscany-colbus-school",
+	"it-tuscany-colbus-nonschool",
+	"it-tuscany-at-school",
+	"it-tuscany-at-nonschool",
+}
+
+var trentinoPublicFeedIDs = []string{
+	"it-trentino-urban",
+	"it-trentino-extraurban",
+}
+
+var italyPublicFeedIDs = append(append([]string{
+	"it-rome",
+	"it-milan-atm",
+	"it-lombardy-trenord",
+}, tuscanyPublicFeedIDs...), trentinoPublicFeedIDs...)
+
 var Networks = []NetworkSpec{
+	{
+		ID: "ch-national", Name: "Switzerland - national GTFS",
+		Description: "Official nationwide Swiss static GTFS timetable, suitable as the canonical country source after preprocessing.",
+		Publisher:   Feeds["ch-aggregate-2026"].Publisher, License: Feeds["ch-aggregate-2026"].License, SourceURL: Feeds["ch-aggregate-2026"].SourceURL,
+		Attribution: Feeds["ch-aggregate-2026"].Attribution, CenterLatitude: 46.8182, CenterLongitude: 8.2275,
+		ComponentFeedIDs: []string{"ch-aggregate-2026"},
+	},
+	{
+		ID: "it-public-regional", Name: "Italy - regional and city GTFS",
+		Description: "Official no-key Italian regional and city GTFS feeds currently known to the app: Rome, Milan, Lombardy rail, Tuscany, and Trentino.",
+		Publisher:   "Multiple Italian public-data publishers", License: "Mixed open-data licences", SourceURL: "Multiple GTFS endpoints",
+		Attribution:    "Merged network of the Italian feeds listed below. Licences vary by publisher; see each feed attribution.",
+		CenterLatitude: 42.5, CenterLongitude: 12.5,
+		ComponentFeedIDs: italyPublicFeedIDs,
+	},
+	{
+		ID: "it-tuscany-public", Name: "Tuscany - regional GTFS",
+		Description: "Regione Toscana multimodal GTFS resources for rail, ferries, tram, and bus.",
+		Publisher:   "Regione Toscana", License: "CC-BY-4.0", SourceURL: "Multiple Regione Toscana GTFS endpoints",
+		Attribution:    "Merged network of official Regione Toscana GTFS resources; see each feed attribution below.",
+		CenterLatitude: 43.7711, CenterLongitude: 11.2486,
+		ComponentFeedIDs: tuscanyPublicFeedIDs,
+	},
+	{
+		ID: "it-trentino-public", Name: "Trentino - public transport GTFS",
+		Description: "Trentino urban and extraurban GTFS resources.",
+		Publisher:   "Trentino Trasporti", License: "CC-BY-4.0", SourceURL: "Multiple Trentino Trasporti GTFS endpoints",
+		Attribution:    "Merged network of Trentino urban and extraurban GTFS resources; see each feed attribution below.",
+		CenterLatitude: 46.0667, CenterLongitude: 11.1211,
+		ComponentFeedIDs: trentinoPublicFeedIDs,
+	},
 	{
 		ID: "jp-public-no-key", Name: "Japan - available public feeds",
 		Description: "All no-key Japanese GTFS feeds currently known to the app, merged into one local routing network.",
