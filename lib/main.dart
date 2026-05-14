@@ -1,12 +1,33 @@
+import 'dart:async';
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'src/app_log.dart';
 import 'src/home_page.dart';
 import 'src/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const TransitPlannerApp());
+
+  final previousFlutterErrorHandler = FlutterError.onError;
+  FlutterError.onError = (details) {
+    AppLogBuffer.instance.flutterError(details);
+    if (previousFlutterErrorHandler != null) {
+      previousFlutterErrorHandler(details);
+    } else {
+      FlutterError.presentError(details);
+    }
+  };
+  PlatformDispatcher.instance.onError = (error, stackTrace) {
+    AppLogBuffer.instance.error(error, stackTrace: stackTrace);
+    return false;
+  };
+
+  runZonedGuarded(() => runApp(const TransitPlannerApp()), (error, stackTrace) {
+    AppLogBuffer.instance.error(error, stackTrace: stackTrace);
+  });
 }
 
 class TransitPlannerApp extends StatefulWidget {
@@ -24,10 +45,7 @@ class _TransitPlannerAppState extends State<TransitPlannerApp> {
     super.initState();
     _router = GoRouter(
       routes: [
-        GoRoute(
-          path: '/',
-          builder: (context, state) => const HomePage(),
-        ),
+        GoRoute(path: '/', builder: (context, state) => const HomePage()),
       ],
     );
   }

@@ -54,7 +54,7 @@ jobs:
         run: go test ./...
 
   build-android:
-    name: Build Android Debug APK
+    name: Build Android Release APK
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -77,5 +77,5 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
-      - name: Build debug APK
-        run: flutter build apk --debug
+      - name: Build release APK
+        run: flutter build apk --release
