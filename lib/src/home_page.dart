@@ -4,11 +4,11 @@ import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_log.dart';
+import 'feed_catalog.dart';
 import 'go_ffi_router.dart';
 import 'local_router.dart';
+import 'location_search_page.dart';
 import 'models.dart';
-import 'feed_catalog.dart';
-import 'stop_search.dart';
 import 'theme.dart';
 
 const _fallbackStyle = 'https://demotiles.maplibre.org/style.json';
@@ -32,8 +32,8 @@ class _HomePageState extends State<HomePage> {
   LocalTransitRouter? _router;
   TransitFeed _activeFeed = findFeedById(kDefaultFeedId)!;
   List<TransitStop> _stops = const [];
-  TransitStop? _origin;
-  TransitStop? _destination;
+  RoutePoint? _origin;
+  RoutePoint? _destination;
   final Set<TransitMode> _modes = {
     TransitMode.bus,
     TransitMode.tram,
@@ -45,6 +45,11 @@ class _HomePageState extends State<HomePage> {
   bool _loading = false;
   int _maxTransfers = 2;
   List<Itinerary> _itineraries = const [];
+
+  MapLibreMapController? _mapController;
+  bool _styleLoaded = false;
+  final List<Symbol> _markerSymbols = [];
+  final List<Line> _routeLines = [];
 
   @override
   void initState() {
@@ -81,6 +86,7 @@ class _HomePageState extends State<HomePage> {
       _loading = false;
       _itineraries = const [];
     });
+    await _refreshMapOverlays();
     await _plan();
   }
 
@@ -103,50 +109,66 @@ class _HomePageState extends State<HomePage> {
     await _openFeed(feed);
   }
 
-  /// Picks a sensible default origin. For Tokyo feeds the station IDs are
-  /// tuned to the Toei feeds; otherwise fallback to the first loaded stop.
-  TransitStop _pickInitialOrigin(List<TransitStop> stops) {
-    if (stops.isEmpty) {
-      return const TransitStop(
-        id: 'origin',
-        name: 'Origin',
-        latitude: 35.681,
-        longitude: 139.767,
-      );
-    }
+  RoutePoint? _pickInitialOrigin(List<TransitStop> stops) {
+    if (stops.isEmpty) return null;
     final preferred = const ['001', '101', 'wankdorf'];
     for (final id in preferred) {
       for (final stop in stops) {
-        if (stop.id == id) return stop;
+        if (stop.id == id) return RoutePoint.fromStop(stop);
       }
     }
-    return stops.first;
+    return RoutePoint.fromStop(stops.first);
   }
 
-  TransitStop _pickInitialDestination(List<TransitStop> stops) {
-    if (stops.isEmpty) {
-      return const TransitStop(
-        id: 'destination',
-        name: 'Destination',
-        latitude: 35.681,
-        longitude: 139.767,
-      );
-    }
+  RoutePoint? _pickInitialDestination(List<TransitStop> stops) {
+    if (stops.isEmpty) return null;
     final preferred = const ['027', '108', 'bern_bahnhof'];
     for (final id in preferred) {
       for (final stop in stops) {
-        if (stop.id == id) return stop;
+        if (stop.id == id) return RoutePoint.fromStop(stop);
       }
     }
-    return stops.length > 1 ? stops[stops.length ~/ 2] : stops.first;
+    return RoutePoint.fromStop(
+      stops.length > 1 ? stops[stops.length ~/ 2] : stops.first,
+    );
   }
 
-  void _setOrigin(TransitStop stop) {
-    setState(() => _origin = stop);
+  Future<void> _editOrigin() async {
+    final point = await _pickPoint(title: 'Choose origin');
+    if (point == null) return;
+    setState(() => _origin = point);
+    await _refreshMapOverlays();
   }
 
-  void _setDestination(TransitStop stop) {
-    setState(() => _destination = stop);
+  Future<void> _editDestination() async {
+    final point = await _pickPoint(title: 'Choose destination');
+    if (point == null) return;
+    setState(() => _destination = point);
+    await _refreshMapOverlays();
+  }
+
+  Future<RoutePoint?> _pickPoint({required String title}) async {
+    return Navigator.of(context).push<RoutePoint>(
+      MaterialPageRoute<RoutePoint>(
+        builder: (_) => LocationSearchPage(
+          title: title,
+          stops: _stops,
+          feedCenter: (
+            latitude: _activeFeed.centerLatitude,
+            longitude: _activeFeed.centerLongitude,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _swapEndpoints() {
+    setState(() {
+      final tmp = _origin;
+      _origin = _destination;
+      _destination = tmp;
+    });
+    _refreshMapOverlays();
   }
 
   Future<void> _plan() async {
@@ -156,6 +178,18 @@ class _HomePageState extends State<HomePage> {
     if (router == null || origin == null || destination == null) {
       return;
     }
+    final originStop = origin.snappedStop;
+    final destinationStop = destination.snappedStop;
+    if (originStop == null || destinationStop == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not find a nearby stop for the selected location.',
+          ),
+        ),
+      );
+      return;
+    }
     setState(() => _loading = true);
     if (_modes.isEmpty) {
       AppLogBuffer.instance.warning(
@@ -163,8 +197,8 @@ class _HomePageState extends State<HomePage> {
       );
     }
     final request = RouteRequest(
-      origin: origin,
-      destination: destination,
+      origin: originStop,
+      destination: destinationStop,
       departure: _earliestDepartureForFeed(),
       modes: _modes,
       maxTransfers: _maxTransfers,
@@ -177,6 +211,7 @@ class _HomePageState extends State<HomePage> {
         _itineraries = filtered;
         _loading = false;
       });
+      await _refreshMapOverlays();
     } catch (error, stackTrace) {
       AppLogBuffer.instance.error(
         error,
@@ -234,48 +269,186 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width >= 860;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(_activeFeed.name),
-        actions: [
-          IconButton(
-            tooltip: 'Settings',
-            onPressed: () => context.push('/settings'),
-            icon: const Icon(Icons.settings_outlined),
+  Future<void> _onMapStyleLoaded() async {
+    _styleLoaded = true;
+    await _refreshMapOverlays();
+  }
+
+  Future<void> _refreshMapOverlays() async {
+    final controller = _mapController;
+    if (controller == null || !_styleLoaded) return;
+
+    final scheme = Theme.of(context).colorScheme;
+    final transitColor = _hexColor(scheme.primary);
+    final walkColor = _hexColor(scheme.outline);
+
+    for (final line in _routeLines) {
+      try {
+        await controller.removeLine(line);
+      } catch (_) {}
+    }
+    _routeLines.clear();
+    for (final sym in _markerSymbols) {
+      try {
+        await controller.removeSymbol(sym);
+      } catch (_) {}
+    }
+    _markerSymbols.clear();
+
+    final origin = _origin;
+    final destination = _destination;
+    final points = <LatLng>[];
+
+    if (origin != null) {
+      points.add(LatLng(origin.latitude, origin.longitude));
+      _markerSymbols.add(
+        await controller.addSymbol(
+          SymbolOptions(
+            geometry: LatLng(origin.latitude, origin.longitude),
+            iconImage: 'marker-15',
+            iconSize: 2.0,
+            textField: 'A',
+            textOffset: const Offset(0, 1.4),
+            textSize: 12,
           ),
-          IconButton(
-            tooltip: 'Refresh routes',
-            onPressed: _loading || _initializing ? null : _plan,
-            icon: const Icon(Icons.refresh),
+        ),
+      );
+    }
+    if (destination != null) {
+      points.add(LatLng(destination.latitude, destination.longitude));
+      _markerSymbols.add(
+        await controller.addSymbol(
+          SymbolOptions(
+            geometry: LatLng(destination.latitude, destination.longitude),
+            iconImage: 'marker-15',
+            iconSize: 2.0,
+            textField: 'B',
+            textOffset: const Offset(0, 1.4),
+            textSize: 12,
           ),
-        ],
-      ),
-      body: SafeArea(
-        child: _initializing
-            ? _LoadingState(feedName: _activeFeed.name)
-            : wide
-            ? Row(
-                children: [
-                  SizedBox(width: 420, child: _PlannerPanel(state: this)),
-                  const VerticalDivider(width: 1),
-                  Expanded(child: _TransitMap(center: _mapCenter)),
-                ],
-              )
-            : Column(
-                children: [
-                  SizedBox(height: 260, child: _TransitMap(center: _mapCenter)),
-                  Expanded(child: _PlannerPanel(state: this)),
-                ],
-              ),
-      ),
+        ),
+      );
+    }
+
+    if (_itineraries.isNotEmpty) {
+      final itinerary = _itineraries.first;
+      for (final leg in itinerary.legs) {
+        final geometry = [
+          LatLng(leg.from.latitude, leg.from.longitude),
+          LatLng(leg.to.latitude, leg.to.longitude),
+        ];
+        points.addAll(geometry);
+        _routeLines.add(
+          await controller.addLine(
+            LineOptions(
+              geometry: geometry,
+              lineColor: leg.mode == TransitMode.walk ? walkColor : transitColor,
+              lineWidth: 4.0,
+            ),
+          ),
+        );
+      }
+    }
+
+    if (points.isNotEmpty) {
+      final bounds = _boundsForPoints(points);
+      if (bounds != null) {
+        await controller.animateCamera(
+          CameraUpdate.newLatLngBounds(
+            bounds,
+            left: 48,
+            right: 48,
+            top: 220,
+            bottom: 280,
+          ),
+        );
+      }
+    }
+  }
+
+  LatLngBounds? _boundsForPoints(List<LatLng> points) {
+    if (points.isEmpty) return null;
+    double minLat = points.first.latitude;
+    double maxLat = points.first.latitude;
+    double minLng = points.first.longitude;
+    double maxLng = points.first.longitude;
+    for (final p in points) {
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+    if ((maxLat - minLat).abs() < 1e-6 && (maxLng - minLng).abs() < 1e-6) {
+      final pad = 0.005;
+      return LatLngBounds(
+        southwest: LatLng(minLat - pad, minLng - pad),
+        northeast: LatLng(maxLat + pad, maxLng + pad),
+      );
+    }
+    return LatLngBounds(
+      southwest: LatLng(minLat, minLng),
+      northeast: LatLng(maxLat, maxLng),
     );
   }
 
-  LatLng get _mapCenter =>
-      LatLng(_activeFeed.centerLatitude, _activeFeed.centerLongitude);
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: _initializing
+          ? _LoadingState(feedName: _activeFeed.name)
+          : Stack(
+              children: [
+                Positioned.fill(
+                  child: MapLibreMap(
+                    styleString: _fallbackStyle,
+                    initialCameraPosition: CameraPosition(
+                      target: LatLng(
+                        _activeFeed.centerLatitude,
+                        _activeFeed.centerLongitude,
+                      ),
+                      zoom: 12,
+                    ),
+                    myLocationEnabled: false,
+                    compassEnabled: true,
+                    onMapCreated: (c) => _mapController = c,
+                    onStyleLoadedCallback: _onMapStyleLoaded,
+                  ),
+                ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  child: SafeArea(
+                    bottom: false,
+                    child: _SearchHeader(
+                      feed: _activeFeed,
+                      origin: _origin,
+                      destination: _destination,
+                      onEditOrigin: _editOrigin,
+                      onEditDestination: _editDestination,
+                      onSwap: _swapEndpoints,
+                      onSettings: () => context.push('/settings'),
+                    ),
+                  ),
+                ),
+                _ResultsSheet(
+                  feed: _activeFeed,
+                  feeds: kTransitFeeds,
+                  itineraries: _itineraries,
+                  loading: _loading,
+                  modes: _modes,
+                  maxTransfers: _maxTransfers,
+                  onFeedChanged: _switchFeed,
+                  onModeToggled: _setModeEnabled,
+                  onMaxTransfersChanged: _setMaxTransfers,
+                  onPlan: _plan,
+                  origin: _origin,
+                  destination: _destination,
+                ),
+              ],
+            ),
+    );
+  }
 }
 
 class _LoadingState extends StatelessWidget {
@@ -301,140 +474,354 @@ class _LoadingState extends StatelessWidget {
   }
 }
 
-class _PlannerPanel extends StatelessWidget {
-  const _PlannerPanel({required this.state});
+class _SearchHeader extends StatelessWidget {
+  const _SearchHeader({
+    required this.feed,
+    required this.origin,
+    required this.destination,
+    required this.onEditOrigin,
+    required this.onEditDestination,
+    required this.onSwap,
+    required this.onSettings,
+  });
 
-  final _HomePageState state;
-
-  @override
-  Widget build(BuildContext context) {
-    final stops = state._stops;
-    return ListView(
-      padding: const EdgeInsets.all(AppSpacing.m),
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.m),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Plan a trip',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: AppSpacing.s),
-                _FeedSelector(
-                  selectedFeed: state._activeFeed,
-                  onChanged: state._switchFeed,
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  state._activeFeed.description,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: AppSpacing.m),
-                StopPickerField(
-                  label: 'Origin',
-                  icon: Icons.trip_origin,
-                  stop: state._origin,
-                  stops: stops.isEmpty ? kMockStops : stops,
-                  onChanged: state._setOrigin,
-                ),
-                const SizedBox(height: AppSpacing.s),
-                StopPickerField(
-                  label: 'Destination',
-                  icon: Icons.place_outlined,
-                  stop: state._destination,
-                  stops: stops.isEmpty ? kMockStops : stops,
-                  onChanged: state._setDestination,
-                ),
-                const SizedBox(height: AppSpacing.m),
-                Wrap(
-                  spacing: AppSpacing.xs,
-                  runSpacing: AppSpacing.xs,
-                  children: [
-                    _ModeChip(
-                      state: state,
-                      mode: TransitMode.bus,
-                      label: 'Bus',
-                    ),
-                    _ModeChip(
-                      state: state,
-                      mode: TransitMode.tram,
-                      label: 'Tram',
-                    ),
-                    _ModeChip(
-                      state: state,
-                      mode: TransitMode.rail,
-                      label: 'Rail',
-                    ),
-                    _ModeChip(
-                      state: state,
-                      mode: TransitMode.subway,
-                      label: 'Metro',
-                    ),
-                    _ModeChip(
-                      state: state,
-                      mode: TransitMode.ferry,
-                      label: 'Ferry',
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.m),
-                Row(
-                  children: [
-                    const Icon(Icons.transfer_within_a_station),
-                    const SizedBox(width: AppSpacing.s),
-                    Expanded(
-                      child: Slider(
-                        value: state._maxTransfers.toDouble(),
-                        min: 0,
-                        max: 5,
-                        divisions: 5,
-                        label: '${state._maxTransfers}',
-                        onChanged: state._setMaxTransfers,
-                      ),
-                    ),
-                    Text('${state._maxTransfers}'),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.s),
-                FilledButton.icon(
-                  onPressed: state._loading ? null : state._plan,
-                  icon: state._loading
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.route),
-                  label: const Text('Find routes'),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: AppSpacing.m),
-        if (state._itineraries.isEmpty && !state._loading)
-          const _NoItinerariesState(),
-        ...state._itineraries.map(
-          (itinerary) => Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.s),
-            child: _ItineraryCard(itinerary: itinerary),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _NoItinerariesState extends StatelessWidget {
-  const _NoItinerariesState();
+  final TransitFeed feed;
+  final RoutePoint? origin;
+  final RoutePoint? destination;
+  final VoidCallback onEditOrigin;
+  final VoidCallback onEditDestination;
+  final VoidCallback onSwap;
+  final VoidCallback onSettings;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.l),
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.s,
+        AppSpacing.s,
+        AppSpacing.s,
+        0,
+      ),
+      child: Material(
+        elevation: 4,
+        borderRadius: BorderRadius.circular(AppRadius.m),
+        color: theme.colorScheme.surface,
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.s),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: _EndpointField(
+                      icon: Icons.trip_origin,
+                      iconColor: theme.colorScheme.primary,
+                      label: 'From',
+                      point: origin,
+                      onTap: onEditOrigin,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Swap',
+                    onPressed: onSwap,
+                    icon: const Icon(Icons.swap_vert),
+                  ),
+                ],
+              ),
+              const Divider(height: 1),
+              Row(
+                children: [
+                  Expanded(
+                    child: _EndpointField(
+                      icon: Icons.place,
+                      iconColor: theme.colorScheme.error,
+                      label: 'To',
+                      point: destination,
+                      onTap: onEditDestination,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Settings',
+                    onPressed: onSettings,
+                    icon: const Icon(Icons.settings_outlined),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EndpointField extends StatelessWidget {
+  const _EndpointField({
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+    required this.point,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+  final RoutePoint? point;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final hasPoint = point != null;
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppRadius.s),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.s,
+          vertical: AppSpacing.s,
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: iconColor, size: 20),
+            const SizedBox(width: AppSpacing.s),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  Text(
+                    hasPoint ? point!.name : 'Search location',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: hasPoint
+                          ? theme.colorScheme.onSurface
+                          : theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ResultsSheet extends StatelessWidget {
+  const _ResultsSheet({
+    required this.feed,
+    required this.feeds,
+    required this.itineraries,
+    required this.loading,
+    required this.modes,
+    required this.maxTransfers,
+    required this.onFeedChanged,
+    required this.onModeToggled,
+    required this.onMaxTransfersChanged,
+    required this.onPlan,
+    required this.origin,
+    required this.destination,
+  });
+
+  final TransitFeed feed;
+  final List<TransitFeed> feeds;
+  final List<Itinerary> itineraries;
+  final bool loading;
+  final Set<TransitMode> modes;
+  final int maxTransfers;
+  final ValueChanged<TransitFeed> onFeedChanged;
+  final void Function(TransitMode, bool) onModeToggled;
+  final ValueChanged<double> onMaxTransfersChanged;
+  final VoidCallback onPlan;
+  final RoutePoint? origin;
+  final RoutePoint? destination;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DraggableScrollableSheet(
+      initialChildSize: 0.32,
+      minChildSize: 0.14,
+      maxChildSize: 0.92,
+      snap: true,
+      snapSizes: const [0.14, 0.32, 0.92],
+      builder: (context, controller) {
+        return Material(
+          elevation: 8,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(AppRadius.l),
+          ),
+          color: theme.colorScheme.surface,
+          child: ListView(
+            controller: controller,
+            padding: EdgeInsets.zero,
+            children: [
+              const SizedBox(height: AppSpacing.xs),
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.s),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.m),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        loading
+                            ? 'Planning…'
+                            : itineraries.isEmpty
+                                ? 'No routes yet'
+                                : '${itineraries.length} route'
+                                    '${itineraries.length == 1 ? '' : 's'}',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    FilledButton.tonalIcon(
+                      onPressed: loading ? null : onPlan,
+                      icon: loading
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.directions),
+                      label: const Text('Find routes'),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.m,
+                  AppSpacing.s,
+                  AppSpacing.m,
+                  AppSpacing.xs,
+                ),
+                child: DropdownButtonFormField<TransitFeed>(
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Feed',
+                    isDense: true,
+                  ),
+                  initialValue: feed,
+                  items: feeds
+                      .map(
+                        (f) => DropdownMenuItem(
+                          value: f,
+                          child: Text(
+                            f.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: (f) {
+                    if (f != null) onFeedChanged(f);
+                  },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.m),
+                child: Wrap(
+                  spacing: AppSpacing.xs,
+                  runSpacing: AppSpacing.xs,
+                  children: [
+                    for (final entry in const <(TransitMode, String)>[
+                      (TransitMode.bus, 'Bus'),
+                      (TransitMode.tram, 'Tram'),
+                      (TransitMode.rail, 'Rail'),
+                      (TransitMode.subway, 'Metro'),
+                      (TransitMode.ferry, 'Ferry'),
+                    ])
+                      FilterChip(
+                        selected: modes.contains(entry.$1),
+                        label: Text(entry.$2),
+                        avatar: Icon(_modeIcon(entry.$1), size: 18),
+                        onSelected: (s) => onModeToggled(entry.$1, s),
+                      ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.m,
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.transfer_within_a_station),
+                    const SizedBox(width: AppSpacing.s),
+                    Text('Max transfers', style: theme.textTheme.bodySmall),
+                    Expanded(
+                      child: Slider(
+                        value: maxTransfers.toDouble(),
+                        min: 0,
+                        max: 5,
+                        divisions: 5,
+                        label: '$maxTransfers',
+                        onChanged: onMaxTransfersChanged,
+                      ),
+                    ),
+                    Text('$maxTransfers'),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              if (!loading && itineraries.isEmpty)
+                _NoItinerariesState(
+                  origin: origin,
+                  destination: destination,
+                ),
+              for (final itinerary in itineraries)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.m,
+                    vertical: AppSpacing.xs,
+                  ),
+                  child: _ItineraryCard(itinerary: itinerary),
+                ),
+              const SizedBox(height: AppSpacing.xl),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _NoItinerariesState extends StatelessWidget {
+  const _NoItinerariesState({required this.origin, required this.destination});
+
+  final RoutePoint? origin;
+  final RoutePoint? destination;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final missing = origin == null || destination == null;
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        vertical: AppSpacing.l,
+        horizontal: AppSpacing.m,
+      ),
       child: Column(
         children: [
           Icon(
@@ -446,34 +833,14 @@ class _NoItinerariesState extends StatelessWidget {
           Text('No itineraries yet', style: theme.textTheme.titleMedium),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'Pick origin and destination, then tap Find routes.',
+            missing
+                ? 'Pick a start and a destination above, then tap Find routes.'
+                : 'Tap Find routes to plan a trip.',
             style: theme.textTheme.bodySmall,
             textAlign: TextAlign.center,
           ),
         ],
       ),
-    );
-  }
-}
-
-class _ModeChip extends StatelessWidget {
-  const _ModeChip({
-    required this.state,
-    required this.mode,
-    required this.label,
-  });
-
-  final _HomePageState state;
-  final TransitMode mode;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return FilterChip(
-      selected: state._modes.contains(mode),
-      label: Text(label),
-      avatar: Icon(_modeIcon(mode), size: 18),
-      onSelected: (selected) => state._setModeEnabled(mode, selected),
     );
   }
 }
@@ -540,46 +907,6 @@ class _ItineraryCard extends StatelessWidget {
   }
 }
 
-class _FeedSelector extends StatelessWidget {
-  const _FeedSelector({required this.selectedFeed, required this.onChanged});
-
-  final TransitFeed selectedFeed;
-  final ValueChanged<TransitFeed> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return DropdownButtonFormField<TransitFeed>(
-      isExpanded: true,
-      decoration: const InputDecoration(labelText: 'Feed'),
-      initialValue: selectedFeed,
-      items: kTransitFeeds
-          .map((feed) => DropdownMenuItem(value: feed, child: Text(feed.name)))
-          .toList(growable: false),
-      onChanged: (feed) {
-        if (feed != null) {
-          onChanged(feed);
-        }
-      },
-    );
-  }
-}
-
-class _TransitMap extends StatelessWidget {
-  const _TransitMap({required this.center});
-
-  final LatLng center;
-
-  @override
-  Widget build(BuildContext context) {
-    return MapLibreMap(
-      styleString: _fallbackStyle,
-      initialCameraPosition: CameraPosition(target: center, zoom: 12),
-      myLocationEnabled: true,
-      compassEnabled: true,
-    );
-  }
-}
-
 IconData _modeIcon(TransitMode mode) {
   return switch (mode) {
     TransitMode.walk => Icons.directions_walk,
@@ -606,4 +933,12 @@ String _clock(DateTime value) {
   final h = value.hour.toString().padLeft(2, '0');
   final m = value.minute.toString().padLeft(2, '0');
   return '$h:$m';
+}
+
+String _hexColor(Color color) {
+  int channel(double v) => (v * 255.0).round().clamp(0, 255);
+  final r = channel(color.r).toRadixString(16).padLeft(2, '0');
+  final g = channel(color.g).toRadixString(16).padLeft(2, '0');
+  final b = channel(color.b).toRadixString(16).padLeft(2, '0');
+  return '#$r$g$b';
 }

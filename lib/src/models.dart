@@ -14,6 +14,44 @@ class TransitStop {
   final double longitude;
 }
 
+/// A trip endpoint — either a GTFS stop the user picked, or an arbitrary
+/// geocoded address. In both cases we keep an optional [snappedStop] so the
+/// router (which only knows GTFS stop IDs) has something to plan against.
+class RoutePoint {
+  const RoutePoint({
+    required this.name,
+    required this.latitude,
+    required this.longitude,
+    this.snappedStop,
+    this.description,
+    this.isStop = false,
+  });
+
+  /// Construct a [RoutePoint] from an existing GTFS [TransitStop].
+  factory RoutePoint.fromStop(TransitStop stop) => RoutePoint(
+        name: stop.name,
+        latitude: stop.latitude,
+        longitude: stop.longitude,
+        snappedStop: stop,
+        isStop: true,
+      );
+
+  final String name;
+  final double latitude;
+  final double longitude;
+
+  /// The nearest GTFS stop used for actual route planning. For [RoutePoint]s
+  /// that originate from a stop pick this is the stop itself; for geocoded
+  /// addresses it is the closest stop in the active feed.
+  final TransitStop? snappedStop;
+
+  /// Optional secondary line (e.g. for geocoder results the city / country).
+  final String? description;
+
+  /// True when this point came directly from a GTFS stop pick.
+  final bool isStop;
+}
+
 class RouteRequest {
   const RouteRequest({
     required this.origin,
