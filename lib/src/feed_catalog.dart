@@ -90,14 +90,8 @@ const List<TransitFeed> kTransitFeeds = [
     localFileName: 'flatbus20260401.zip',
     attribution:
         'Transit data © Kanazawa City (Kanazawa-ken Jichitai), CC-BY 4.0.',
-    bundledAssetPath:
-        'assets/real_gtfs/jp/kanazawa_flatbus/kanazawa-flatbus.zip',
     centerLatitude: 36.5608,
     centerLongitude: 136.6566,
-    // Kanazawa Flat Bus runs roughly 08:00–18:00 Asia/Tokyo. Anchor planning
-    // to mid-morning so the initial route always returns trips, regardless
-    // of the user's local clock.
-    defaultDepartureHour: 9,
   ),
   TransitFeed(
     id: 'kanazawa-hakusan-meguru',
