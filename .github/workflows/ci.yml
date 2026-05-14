@@ -127,6 +127,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: [build-go-android]
+    env:
+      KEYSTORE_KEY_ALIAS: upload
     # Build a release APK for every commit pushed to a tracked branch, version
     # tags, and manual runs. PRs still build (via the default trigger) but do
     # not publish a GitHub Release.
@@ -140,6 +142,145 @@ jobs:
         run: |
           BUILD_NUMBER=$(( ${{ github.run_number }} * 100 + ${{ github.run_attempt }} ))
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> $GITHUB_OUTPUT
+
+      - name: Check for keystore
+        id: check_keystore
+        shell: bash
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_STORE_PASSWORD" ] || [ -z "$KEYSTORE_KEY_PASSWORD" ]; then
+            echo "ENABLED=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Release signing disabled — set KEYSTORE_BASE64, KEYSTORE_STORE_PASSWORD, and KEYSTORE_KEY_PASSWORD secrets to sign with a stable key."
+            exit 0
+          fi
+          echo "ENABLED=true" >> "$GITHUB_OUTPUT"
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_STORE_PASSWORD: ${{ secrets.KEYSTORE_STORE_PASSWORD }}
+          KEYSTORE_KEY_PASSWORD: ${{ secrets.KEYSTORE_KEY_PASSWORD }}
+
+      - name: Create keystore
+        if: ${{ steps.check_keystore.outputs.ENABLED == 'true' }}
+        shell: bash
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > release-keystore.jks
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+
+      - name: Resolve signing keystore
+        if: ${{ steps.check_keystore.outputs.ENABLED == 'true' }}
+        id: resolve_keystore
+        shell: bash
+        run: |
+          KEYSTORE_STORE_PASSWORD="$(printf '%s' "$KEYSTORE_STORE_PASSWORD" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+          KEYSTORE_KEY_PASSWORD="$(printf '%s' "$KEYSTORE_KEY_PASSWORD" | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+
+          if [ -z "$KEYSTORE_STORE_PASSWORD" ]; then
+            echo "::error::KEYSTORE_STORE_PASSWORD is empty after trimming"
+            exit 1
+          fi
+
+          KEYSTORE_LIST="$(keytool -list \
+            -v \
+            -keystore release-keystore.jks \
+            -storepass "$KEYSTORE_STORE_PASSWORD" \
+            2>&1 || true)"
+          if [ -z "$KEYSTORE_LIST" ]; then
+            echo "::error::Could not read keystore output from keytool"
+            exit 1
+          fi
+
+          if echo "$KEYSTORE_LIST" | grep -qi "keystore password was incorrect"; then
+            echo "::error::Invalid KEYSTORE_STORE_PASSWORD"
+            exit 1
+          fi
+
+          if echo "$KEYSTORE_LIST" | grep -qi "keystore was tampered"; then
+            echo "::error::Invalid KEYSTORE_STORE_PASSWORD"
+            exit 1
+          fi
+
+          if echo "$KEYSTORE_LIST" | grep -qi "is not a valid keystore"; then
+            echo "::error::release-keystore.jks is not a valid keystore or KEYSTORE_BASE64 is corrupt"
+            exit 1
+          fi
+
+          mapfile -t AVAILABLE_ALIASES < <(
+            printf '%s\n' "$KEYSTORE_LIST" \
+            | sed -nE "s/^[[:space:]]*[Aa]lias[[:space:]]*name:[[:space:]]*([^,]+).*/\\1/p"
+          )
+
+          if [ "${#AVAILABLE_ALIASES[@]}" -eq 0 ]; then
+            KEYSTORE_RFC_LIST="$(keytool -list \
+              -rfc \
+              -keystore release-keystore.jks \
+              -storepass "$KEYSTORE_STORE_PASSWORD" \
+              2>&1 || true)"
+            mapfile -t AVAILABLE_ALIASES < <(
+              printf '%s\n' "$KEYSTORE_RFC_LIST" \
+              | sed -nE "s/^[[:space:]]*[Aa]lias:[[:space:]]*([^[:space:]]+).*/\\1/p"
+            )
+          fi
+
+          if [ "${#AVAILABLE_ALIASES[@]}" -eq 0 ]; then
+            echo "::error::Could not parse keystore aliases from keytool output"
+            exit 1
+          fi
+
+          KEY_ALIAS="$KEYSTORE_KEY_ALIAS"
+          if [ -n "$KEY_ALIAS" ]; then
+            ALIAS_FOUND="false"
+            for ALIAS in "${AVAILABLE_ALIASES[@]}"; do
+              if [ "$ALIAS" = "$KEY_ALIAS" ]; then
+                ALIAS_FOUND="true"
+                break
+              fi
+            done
+            if [ "$ALIAS_FOUND" != "true" ]; then
+              KEY_ALIAS=""
+            fi
+          fi
+          if [ -z "$KEY_ALIAS" ]; then
+            echo "::warning::Configured key alias not found, using first available alias"
+            KEY_ALIAS="${AVAILABLE_ALIASES[0]}"
+          fi
+
+          KEY_CANDIDATES=("${KEYSTORE_KEY_PASSWORD}" "${KEYSTORE_STORE_PASSWORD}")
+          EFFECTIVE_KEY_PASSWORD=""
+          for KEY_PASSWORD in "${KEY_CANDIDATES[@]}"; do
+            if [ -z "$KEY_PASSWORD" ]; then
+              continue
+            fi
+            if keytool -importkeystore \
+              -srckeystore release-keystore.jks \
+              -srcstorepass "$KEYSTORE_STORE_PASSWORD" \
+              -srcalias "$KEY_ALIAS" \
+              -srckeypass "$KEY_PASSWORD" \
+              -destkeystore /tmp/release-keystore.resolved.p12 \
+              -deststoretype PKCS12 \
+              -deststorepass resolvedpass \
+              -destkeypass resolvedpass \
+              -noprompt; then
+              EFFECTIVE_KEY_PASSWORD="$KEY_PASSWORD"
+              RESOLVED_KEYSTORE_PASSWORD="resolvedpass"
+              break
+            fi
+          done
+
+          if [ -z "$EFFECTIVE_KEY_PASSWORD" ]; then
+            echo "::error::Release keystore secrets are invalid"
+            exit 1
+          fi
+
+          {
+            echo "KEYSTORE_KEY_ALIAS=$KEY_ALIAS"
+            echo "KEYSTORE_KEY_PASSWORD=$RESOLVED_KEYSTORE_PASSWORD"
+            echo "KEYSTORE_STORE_PASSWORD=$RESOLVED_KEYSTORE_PASSWORD"
+            echo "KEYSTORE_PATH=/tmp/release-keystore.resolved.p12"
+          } >> "$GITHUB_OUTPUT"
+        env:
+          KEYSTORE_STORE_PASSWORD: ${{ secrets.KEYSTORE_STORE_PASSWORD }}
+          KEYSTORE_KEY_PASSWORD: ${{ secrets.KEYSTORE_KEY_PASSWORD }}
+          KEYSTORE_KEY_ALIAS: ${{ env.KEYSTORE_KEY_ALIAS }}
 
       - name: Setup Java
         uses: actions/setup-java@v5
@@ -177,6 +318,11 @@ jobs:
         run: flutter pub get
 
       - name: Build release APK
+        env:
+          KEYSTORE_PATH: ${{ steps.resolve_keystore.outputs.KEYSTORE_PATH }}
+          KEYSTORE_STORE_PASSWORD: ${{ steps.resolve_keystore.outputs.KEYSTORE_STORE_PASSWORD }}
+          KEYSTORE_KEY_ALIAS: ${{ steps.resolve_keystore.outputs.KEYSTORE_KEY_ALIAS }}
+          KEYSTORE_KEY_PASSWORD: ${{ steps.resolve_keystore.outputs.KEYSTORE_KEY_PASSWORD }}
         run: |
           flutter build apk --release --no-pub \
             --build-number ${{ steps.build_meta.outputs.BUILD_NUMBER }}
