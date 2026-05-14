@@ -14,14 +14,14 @@ val keystoreProperties = Properties().apply {
     }
 }
 
-val keystorePath: String? = System.getenv("KEYSTORE_PATH")
-    ?: keystoreProperties.getProperty("storeFile")
-val keystoreStorePassword: String? = System.getenv("KEYSTORE_STORE_PASSWORD")
-    ?: keystoreProperties.getProperty("storePassword")
-val keystoreKeyPassword: String? = System.getenv("KEYSTORE_KEY_PASSWORD")
-    ?: keystoreProperties.getProperty("keyPassword")
-val keystoreKeyAlias: String? = System.getenv("KEYSTORE_KEY_ALIAS")
-    ?: keystoreProperties.getProperty("keyAlias")
+fun envOrProp(envName: String, propName: String): String? =
+    (System.getenv(envName)?.takeIf { it.isNotBlank() }
+        ?: keystoreProperties.getProperty(propName))?.takeIf { it.isNotBlank() }
+
+val keystorePath: String? = envOrProp("KEYSTORE_PATH", "storeFile")
+val keystoreStorePassword: String? = envOrProp("KEYSTORE_STORE_PASSWORD", "storePassword")
+val keystoreKeyPassword: String? = envOrProp("KEYSTORE_KEY_PASSWORD", "keyPassword")
+val keystoreKeyAlias: String? = envOrProp("KEYSTORE_KEY_ALIAS", "keyAlias")
 
 android {
     namespace = "it.denv.transit_planner"
