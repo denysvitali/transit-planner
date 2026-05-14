@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 
 import 'app_log.dart';
@@ -111,14 +111,6 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  void _showDeveloperOptions() {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => const _DeveloperOptionsSheet(),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 860;
@@ -127,9 +119,9 @@ class _HomePageState extends State<HomePage> {
         title: const Text('Transit Planner'),
         actions: [
           IconButton(
-            tooltip: 'Developer options',
-            onPressed: _showDeveloperOptions,
-            icon: const Icon(Icons.bug_report_outlined),
+            tooltip: 'Settings',
+            onPressed: () => context.push('/settings'),
+            icon: const Icon(Icons.settings_outlined),
           ),
           IconButton(
             tooltip: 'Refresh routes',
@@ -154,153 +146,6 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
       ),
-    );
-  }
-}
-
-class _DeveloperOptionsSheet extends StatelessWidget {
-  const _DeveloperOptionsSheet();
-
-  static const _logLevels = {AppLogLevel.warning, AppLogLevel.error};
-
-  Future<void> _copyLogs(BuildContext context) async {
-    await Clipboard.setData(
-      ClipboardData(text: AppLogBuffer.instance.formatted(_logLevels)),
-    );
-    if (!context.mounted) {
-      return;
-    }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Warning and error logs copied')),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.m,
-          0,
-          AppSpacing.m,
-          AppSpacing.m,
-        ),
-        child: ListenableBuilder(
-          listenable: AppLogBuffer.instance,
-          builder: (context, _) {
-            final logs = AppLogBuffer.instance.entriesFor(_logLevels);
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Developer options',
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Copy warnings and errors',
-                      onPressed: () => _copyLogs(context),
-                      icon: const Icon(Icons.copy_all_outlined),
-                    ),
-                    IconButton(
-                      tooltip: 'Clear logs',
-                      onPressed: logs.isEmpty
-                          ? null
-                          : AppLogBuffer.instance.clear,
-                      icon: const Icon(Icons.delete_sweep_outlined),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.s),
-                if (logs.isEmpty)
-                  const _EmptyLogState()
-                else
-                  Flexible(
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: logs.length,
-                      separatorBuilder: (context, index) =>
-                          const Divider(height: AppSpacing.m),
-                      itemBuilder: (context, index) {
-                        return _LogEntryTile(entry: logs[index]);
-                      },
-                    ),
-                  ),
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyLogState extends StatelessWidget {
-  const _EmptyLogState();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.l),
-      child: Column(
-        children: [
-          Icon(
-            Icons.check_circle_outline,
-            color: theme.colorScheme.primary,
-            size: 32,
-          ),
-          const SizedBox(height: AppSpacing.s),
-          Text('No warning or error logs', style: theme.textTheme.titleMedium),
-        ],
-      ),
-    );
-  }
-}
-
-class _LogEntryTile extends StatelessWidget {
-  const _LogEntryTile({required this.entry});
-
-  final AppLogEntry entry;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final color = switch (entry.level) {
-      AppLogLevel.warning => theme.colorScheme.tertiary,
-      AppLogLevel.error => theme.colorScheme.error,
-    };
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(
-          entry.level == AppLogLevel.warning
-              ? Icons.warning_amber_outlined
-              : Icons.error_outline,
-          color: color,
-        ),
-        const SizedBox(width: AppSpacing.s),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${entry.level.name.toUpperCase()} ${_clock(entry.timestamp)}',
-                style: theme.textTheme.labelLarge?.copyWith(color: color),
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              SelectableText(entry.message),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }

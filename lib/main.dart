@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import 'src/app_log.dart';
 import 'src/home_page.dart';
+import 'src/settings_page.dart';
 import 'src/theme.dart';
 
 Future<void> main() async {
@@ -46,6 +47,10 @@ class _TransitPlannerAppState extends State<TransitPlannerApp> {
     _router = GoRouter(
       routes: [
         GoRoute(path: '/', builder: (context, state) => const HomePage()),
+        GoRoute(
+          path: '/settings',
+          builder: (context, state) => const SettingsPage(),
+        ),
       ],
     );
   }
