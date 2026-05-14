@@ -15,6 +15,8 @@ void main() {
         'kanazawa-flatbus',
         'kanazawa-hakusan-meguru',
         'kanazawa-tsubata-bus',
+        'jbda-kaetsunou-kaetsunouippan',
+        'jbda-chitetsu-chitetsushinaidensha',
         'kobe-shiokaze',
         'kobe-satoyama',
         'himeji-ieshima',
@@ -22,6 +24,32 @@ void main() {
         'nishinomiya-sakurayamanami',
         'yamatokoriyama-kingyobus',
         'rinkan-koyasan',
+        'jbda-akashicity-tacobustacobusmini',
+        'jbda-higashiomicity-higasiohmisicommunitybus',
+      ]),
+    );
+  });
+
+  test('regional networks include Mobility Database mirrors', () {
+    final hokuriku = findFeedById('kanazawa-region')!;
+    final kansai = findFeedById('kansai-public-no-key')!;
+
+    expect(
+      componentFeedsFor(hokuriku).map((feed) => feed.id),
+      containsAll([
+        'jbda-kaetsunou-kaetsunouippan',
+        'jbda-nonoichicity-communitybus',
+        'jbda-chitetsu-chitetsubus',
+        'jbda-manyosen-manyosen',
+      ]),
+    );
+    expect(
+      componentFeedsFor(kansai).map((feed) => feed.id),
+      containsAll([
+        'jbda-akashicity-tacobustacobusmini',
+        'jbda-kakogawacity-kakobuskakobusmini',
+        'jbda-andotown-andocombus',
+        'jbda-omihachimancity-akakonbus',
       ]),
     );
   });

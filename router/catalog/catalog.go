@@ -83,6 +83,26 @@ var Feeds = map[string]FeedSpec{
 	"nishinomiya-sakurayamanami": communityBus("nishinomiya-sakurayamanami", "Nishinomiya Sakurayamanami Bus", "Hyogo", "Nishinomiya City (西宮市)", "CC-BY-2.1-JP", "https://api.gtfs-data.jp/v2/organizations/nishinomiyacity/feeds/sakurayamanami/files/feed.zip?rid=current", "Nishinomiya Sakurayamanami community bus, via gtfs-data.jp", 34.7376, 135.3416),
 	"yamatokoriyama-kingyobus":   communityBus("yamatokoriyama-kingyobus", "Yamatokoriyama Kingyo Bus", "Nara", "Yamatokoriyama City (大和郡山市)", "CC-BY-4.0", "https://api.gtfs-data.jp/v2/organizations/yamatokoriyamacity/feeds/kingyobus/files/feed.zip?rid=current", "Yamatokoriyama Kingyo community bus, via gtfs-data.jp", 34.6490, 135.7828),
 	"rinkan-koyasan":             communityBus("rinkan-koyasan", "Nankai Rinkan Koyasan Bus", "Wakayama", "Nankai Rinkan Bus (南海りんかんバス)", "CC-BY-4.0", "https://api.gtfs-data.jp/v2/organizations/rinkan/feeds/koyasan/files/feed.zip?rid=current", "Mt. Koya / Koyasan bus network, via gtfs-data.jp", 34.2120, 135.5867),
+
+	"jbda-kaetsunou-kaetsunouippan":                mobilityFeed("jbda-kaetsunou-kaetsunouippan", "Kaetsunou Bus", "Ishikawa Prefecture", "加越能バス", "CC0-1.0", "https://files.mobilitydatabase.org/jbda-kaetsunou-kaetsunouippan/latest.zip", "Kaetsunou general route bus network around Kanazawa, mirrored by Mobility Database.", 36.740017, 136.902600),
+	"jbda-nonoichicity-communitybus":               mobilityFeed("jbda-nonoichicity-communitybus", "Nonoichi Community Bus", "Ishikawa Prefecture", "野々市市", "CC-BY-4.0", "https://files.mobilitydatabase.org/jbda-nonoichicity-communitybus/latest.zip", "Nonoichi community bus network, mirrored by Mobility Database.", 36.524932, 136.597140),
+	"jbda-uchinadatown-communitybus":               mobilityFeed("jbda-uchinadatown-communitybus", "Uchinada Community Bus", "Ishikawa Prefecture", "内灘町", "CC-BY-4.0", "https://files.mobilitydatabase.org/jbda-uchinadatown-communitybus/latest.zip", "Uchinada community bus network, mirrored by Mobility Database.", 36.660712, 136.652230),
+	"jbda-komatsucity-blue":                        mobilityFeed("jbda-komatsucity-blue", "Komatsu North Loop", "Ishikawa Prefecture", "小松市", "CC0-1.0", "https://files.mobilitydatabase.org/jbda-komatsucity-blue/latest.zip", "Komatsu city north loop bus, mirrored by Mobility Database.", 36.414092, 136.459254),
+	"jbda-komatsucity-orange":                      mobilityFeed("jbda-komatsucity-orange", "Komatsu South Loop", "Ishikawa Prefecture", "小松市", "CC0-1.0", "https://files.mobilitydatabase.org/jbda-komatsucity-orange/latest.zip", "Komatsu city south loop bus, mirrored by Mobility Database.", 36.395266, 136.470707),
+	"jbda-komatsucity-kibagatasen":                 mobilityFeed("jbda-komatsucity-kibagatasen", "Komatsu Kibagata Line", "Ishikawa Prefecture", "小松市", "CC0-1.0", "https://files.mobilitydatabase.org/jbda-komatsucity-kibagatasen/latest.zip", "Komatsu Kibagata bus line, mirrored by Mobility Database.", 36.373056, 136.458775),
+	"jbda-chitetsu-chitetsubus":                    mobilityFeed("jbda-chitetsu-chitetsubus", "Toyama Chitetsu Bus", "Toyama Prefecture", "富山地方鉄道", "CC0-1.0", "https://files.mobilitydatabase.org/jbda-chitetsu-chitetsubus/latest.zip", "Toyama Chitetsu bus network, mirrored by Mobility Database.", 36.733815, 137.248690),
+	"jbda-chitetsu-chitetsushinaidensha":           mobilityFeed("jbda-chitetsu-chitetsushinaidensha", "Toyama Chitetsu City Tram", "Toyama Prefecture", "富山地方鉄道", "CC0-1.0", "https://files.mobilitydatabase.org/jbda-chitetsu-chitetsushinaidensha/latest.zip", "Toyama Chitetsu city tram network, mirrored by Mobility Database.", 36.715942, 137.212628),
+	"jbda-manyosen-manyosen":                       mobilityFeed("jbda-manyosen-manyosen", "Manyosen Tram", "Toyama Prefecture", "万葉線", "CC0-1.0", "https://files.mobilitydatabase.org/jbda-manyosen-manyosen/latest.zip", "Manyosen tram network, mirrored by Mobility Database.", 36.765312, 137.062410),
+	"jbda-akashicity-tacobustacobusmini":           mobilityFeed("jbda-akashicity-tacobustacobusmini", "Akashi Taco Bus", "Hyogo Prefecture", "明石市", "CC-BY-4.0", "https://files.mobilitydatabase.org/jbda-akashicity-tacobustacobusmini/latest.zip", "Akashi Taco Bus and Taco Bus Mini, mirrored by Mobility Database.", 34.689950, 134.923916),
+	"jbda-kakogawacity-kakobuskakobusmini":         mobilityFeed("jbda-kakogawacity-kakobuskakobusmini", "Kakogawa Kako Bus", "Hyogo Prefecture", "加古川市", "CC-BY-2.1-JP", "https://files.mobilitydatabase.org/jbda-kakogawacity-kakobuskakobusmini/latest.zip", "Kakogawa Kako Bus and Kako Bus Mini, mirrored by Mobility Database.", 34.779365, 134.845272),
+	"jbda-takasagocity-jotonbus":                   mobilityFeed("jbda-takasagocity-jotonbus", "Takasago Joton Bus", "Hyogo Prefecture", "高砂市", "CC-BY-2.1-JP", "https://files.mobilitydatabase.org/jbda-takasagocity-jotonbus/latest.zip", "Takasago Joton Bus, mirrored by Mobility Database.", 34.779860, 134.792922),
+	"jbda-nishinomiyacity-guruttonamaze":           mobilityFeed("jbda-nishinomiyacity-guruttonamaze", "Nishinomiya Gurutto Namaze", "Hyogo Prefecture", "西宮市", "CC-BY-2.1-JP", "https://files.mobilitydatabase.org/jbda-nishinomiyacity-guruttonamaze/latest.zip", "Nishinomiya Gurutto Namaze community bus, mirrored by Mobility Database.", 34.819407, 135.328093),
+	"jbda-nishinomiyacity-koyoen":                  mobilityFeed("jbda-nishinomiyacity-koyoen", "Nishinomiya Koyoen Bus", "Hyogo Prefecture", "西宮市", "CC-BY-4.0", "https://files.mobilitydatabase.org/jbda-nishinomiyacity-koyoen/latest.zip", "Nishinomiya Koyoen community bus, mirrored by Mobility Database.", 34.766085, 135.327792),
+	"jbda-andotown-andocombus":                     mobilityFeed("jbda-andotown-andocombus", "Ando Community Bus", "Nara Prefecture", "安堵町", "CC-BY-4.0", "https://files.mobilitydatabase.org/jbda-andotown-andocombus/latest.zip", "Ando community bus, mirrored by Mobility Database.", 34.600310, 135.761048),
+	"jbda-nabaricity-communitybus":                 mobilityFeed("jbda-nabaricity-communitybus", "Nabari Community Bus", "Nara Prefecture", "名張市", "CC-BY-4.0", "https://files.mobilitydatabase.org/jbda-nabaricity-communitybus/latest.zip", "Nabari community bus, mirrored by Mobility Database.", 34.622912, 136.115424),
+	"jbda-yamatotakadacity-communitybuskibougou":   mobilityFeed("jbda-yamatotakadacity-communitybuskibougou", "Yamatotakada Kibou Bus", "Nara Prefecture", "大和高田市", "CC-BY-4.0", "https://files.mobilitydatabase.org/jbda-yamatotakadacity-communitybuskibougou/latest.zip", "Yamatotakada Kibou community bus, mirrored by Mobility Database.", 34.502817, 135.742643),
+	"jbda-higashiomicity-higasiohmisicommunitybus": mobilityFeed("jbda-higashiomicity-higasiohmisicommunitybus", "Higashiomi Chokotto Bus", "Shiga Prefecture", "東近江市", "CC-BY-4.0", "https://files.mobilitydatabase.org/jbda-higashiomicity-higasiohmisicommunitybus/latest.zip", "Higashiomi Chokotto Bus, mirrored by Mobility Database.", 35.129049, 136.248841),
+	"jbda-omihachimancity-akakonbus":               mobilityFeed("jbda-omihachimancity-akakonbus", "Omihachiman Akakon Bus", "Shiga Prefecture", "近江八幡市", "CC-BY-4.0", "https://files.mobilitydatabase.org/jbda-omihachimancity-akakonbus/latest.zip", "Omihachiman Akakon Bus, mirrored by Mobility Database.", 35.135921, 136.096512),
 }
 
 func communityBus(id, name, region, publisher, license, url, description string, lat, lon float64) FeedSpec {
@@ -94,6 +114,55 @@ func communityBus(id, name, region, publisher, license, url, description string,
 	}
 }
 
+func mobilityFeed(id, name, region, publisher, license, url, description string, lat, lon float64) FeedSpec {
+	return FeedSpec{
+		ID: id, Name: name, Country: "JP", Region: region, Publisher: publisher, License: license,
+		SourceURL: url, LocalFileName: id + ".zip", Description: description,
+		CenterLatitude: lat, CenterLongitude: lon,
+		Attribution: "Transit data © " + publisher + ", " + license + "; mirrored by Mobility Database.",
+	}
+}
+
+var hokurikuPublicFeedIDs = []string{
+	"kanazawa-flatbus",
+	"kanazawa-hakusan-meguru",
+	"kanazawa-tsubata-bus",
+	"jbda-kaetsunou-kaetsunouippan",
+	"jbda-nonoichicity-communitybus",
+	"jbda-uchinadatown-communitybus",
+	"jbda-komatsucity-blue",
+	"jbda-komatsucity-orange",
+	"jbda-komatsucity-kibagatasen",
+	"jbda-chitetsu-chitetsubus",
+	"jbda-chitetsu-chitetsushinaidensha",
+	"jbda-manyosen-manyosen",
+}
+
+var kansaiPublicFeedIDs = []string{
+	"kobe-shiokaze",
+	"kobe-satoyama",
+	"himeji-ieshima",
+	"takarazuka-runrunbus",
+	"nishinomiya-sakurayamanami",
+	"yamatokoriyama-kingyobus",
+	"rinkan-koyasan",
+	"jbda-akashicity-tacobustacobusmini",
+	"jbda-kakogawacity-kakobuskakobusmini",
+	"jbda-takasagocity-jotonbus",
+	"jbda-nishinomiyacity-guruttonamaze",
+	"jbda-nishinomiyacity-koyoen",
+	"jbda-andotown-andocombus",
+	"jbda-nabaricity-communitybus",
+	"jbda-yamatotakadacity-communitybuskibougou",
+	"jbda-higashiomicity-higasiohmisicommunitybus",
+	"jbda-omihachimancity-akakonbus",
+}
+
+var japanPublicFeedIDs = append(append([]string{
+	"toei-train",
+	"toei-bus",
+}, hokurikuPublicFeedIDs...), kansaiPublicFeedIDs...)
+
 var Networks = []NetworkSpec{
 	{
 		ID: "jp-public-no-key", Name: "Japan - available public feeds",
@@ -101,7 +170,7 @@ var Networks = []NetworkSpec{
 		Publisher:   "Multiple public GTFS publishers", License: "Mixed open-data licences", SourceURL: "Multiple GTFS endpoints",
 		Attribution:    "Merged network of the Japanese feeds listed below. Licences vary by publisher; see each feed attribution.",
 		CenterLatitude: 35.681236, CenterLongitude: 139.767125, DefaultDepartureHour: hour(8),
-		ComponentFeedIDs: []string{"toei-train", "toei-bus", "kanazawa-flatbus", "kanazawa-hakusan-meguru", "kanazawa-tsubata-bus", "kobe-shiokaze", "kobe-satoyama", "himeji-ieshima", "takarazuka-runrunbus", "nishinomiya-sakurayamanami", "yamatokoriyama-kingyobus", "rinkan-koyasan"},
+		ComponentFeedIDs: japanPublicFeedIDs,
 	},
 	{
 		ID: "tokyo-toei", Name: "Tokyo Toei network",
@@ -112,19 +181,19 @@ var Networks = []NetworkSpec{
 	},
 	{
 		ID: "kanazawa-region", Name: "Kanazawa region",
-		Description: "Kanazawa and nearby Hakusan/Tsubata public bus feeds merged into one regional network.",
-		Publisher:   "Multiple Ishikawa public-data publishers", License: "CC-BY-4.0", SourceURL: "Multiple municipal GTFS endpoints",
-		Attribution:    "Merged network of Kanazawa, Hakusan, and Tsubata public GTFS feeds; see each feed attribution below.",
+		Description: "Kanazawa, Ishikawa, and nearby Hokuriku public bus and tram feeds merged into one regional network.",
+		Publisher:   "Multiple Hokuriku public-data publishers", License: "Mixed open-data licences", SourceURL: "Multiple GTFS endpoints",
+		Attribution:    "Merged network of Kanazawa, Ishikawa, and nearby Hokuriku public GTFS feeds; see each feed attribution below.",
 		CenterLatitude: 36.5608, CenterLongitude: 136.6566,
-		ComponentFeedIDs: []string{"kanazawa-flatbus", "kanazawa-hakusan-meguru", "kanazawa-tsubata-bus"},
+		ComponentFeedIDs: hokurikuPublicFeedIDs,
 	},
 	{
 		ID: "kansai-public-no-key", Name: "Kansai - available public feeds",
-		Description: "Small public no-key Hyogo, Nara, and Wakayama feeds. This does not include major JR or private rail.",
+		Description: "Public no-key Hyogo, Nara, Shiga, and Wakayama feeds. This does not include major JR or private rail.",
 		Publisher:   "Multiple public GTFS publishers", License: "Mixed open-data licences", SourceURL: "Multiple GTFS endpoints",
 		Attribution:    "Merged network of the Kansai-area no-key public feeds listed below. Major rail is not included.",
 		CenterLatitude: 34.6937, CenterLongitude: 135.5023,
-		ComponentFeedIDs: []string{"kobe-shiokaze", "kobe-satoyama", "himeji-ieshima", "takarazuka-runrunbus", "nishinomiya-sakurayamanami", "yamatokoriyama-kingyobus", "rinkan-koyasan"},
+		ComponentFeedIDs: kansaiPublicFeedIDs,
 	},
 }
 

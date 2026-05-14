@@ -22,6 +22,15 @@ const List<TransitFeed> kTransitFeeds = [
       "kanazawa-flatbus",
       "kanazawa-hakusan-meguru",
       "kanazawa-tsubata-bus",
+      "jbda-kaetsunou-kaetsunouippan",
+      "jbda-nonoichicity-communitybus",
+      "jbda-uchinadatown-communitybus",
+      "jbda-komatsucity-blue",
+      "jbda-komatsucity-orange",
+      "jbda-komatsucity-kibagatasen",
+      "jbda-chitetsu-chitetsubus",
+      "jbda-chitetsu-chitetsushinaidensha",
+      "jbda-manyosen-manyosen",
       "kobe-shiokaze",
       "kobe-satoyama",
       "himeji-ieshima",
@@ -29,6 +38,16 @@ const List<TransitFeed> kTransitFeeds = [
       "nishinomiya-sakurayamanami",
       "yamatokoriyama-kingyobus",
       "rinkan-koyasan",
+      "jbda-akashicity-tacobustacobusmini",
+      "jbda-kakogawacity-kakobuskakobusmini",
+      "jbda-takasagocity-jotonbus",
+      "jbda-nishinomiyacity-guruttonamaze",
+      "jbda-nishinomiyacity-koyoen",
+      "jbda-andotown-andocombus",
+      "jbda-nabaricity-communitybus",
+      "jbda-yamatotakadacity-communitybuskibougou",
+      "jbda-higashiomicity-higasiohmisicommunitybus",
+      "jbda-omihachimancity-akakonbus",
     ],
   ),
   TransitFeed(
@@ -51,26 +70,35 @@ const List<TransitFeed> kTransitFeeds = [
     id: "kanazawa-region",
     name: "Kanazawa region",
     description:
-        "Kanazawa and nearby Hakusan/Tsubata public bus feeds merged into one regional network.",
-    publisher: "Multiple Ishikawa public-data publishers",
-    license: "CC-BY-4.0",
-    sourceUrl: "Multiple municipal GTFS endpoints",
+        "Kanazawa, Ishikawa, and nearby Hokuriku public bus and tram feeds merged into one regional network.",
+    publisher: "Multiple Hokuriku public-data publishers",
+    license: "Mixed open-data licences",
+    sourceUrl: "Multiple GTFS endpoints",
     localFileName: "",
     attribution:
-        "Merged network of Kanazawa, Hakusan, and Tsubata public GTFS feeds; see each feed attribution below.",
+        "Merged network of Kanazawa, Ishikawa, and nearby Hokuriku public GTFS feeds; see each feed attribution below.",
     centerLatitude: 36.5608,
     centerLongitude: 136.6566,
     componentFeedIds: [
       "kanazawa-flatbus",
       "kanazawa-hakusan-meguru",
       "kanazawa-tsubata-bus",
+      "jbda-kaetsunou-kaetsunouippan",
+      "jbda-nonoichicity-communitybus",
+      "jbda-uchinadatown-communitybus",
+      "jbda-komatsucity-blue",
+      "jbda-komatsucity-orange",
+      "jbda-komatsucity-kibagatasen",
+      "jbda-chitetsu-chitetsubus",
+      "jbda-chitetsu-chitetsushinaidensha",
+      "jbda-manyosen-manyosen",
     ],
   ),
   TransitFeed(
     id: "kansai-public-no-key",
     name: "Kansai - available public feeds",
     description:
-        "Small public no-key Hyogo, Nara, and Wakayama feeds. This does not include major JR or private rail.",
+        "Public no-key Hyogo, Nara, Shiga, and Wakayama feeds. This does not include major JR or private rail.",
     publisher: "Multiple public GTFS publishers",
     license: "Mixed open-data licences",
     sourceUrl: "Multiple GTFS endpoints",
@@ -87,6 +115,16 @@ const List<TransitFeed> kTransitFeeds = [
       "nishinomiya-sakurayamanami",
       "yamatokoriyama-kingyobus",
       "rinkan-koyasan",
+      "jbda-akashicity-tacobustacobusmini",
+      "jbda-kakogawacity-kakobuskakobusmini",
+      "jbda-takasagocity-jotonbus",
+      "jbda-nishinomiyacity-guruttonamaze",
+      "jbda-nishinomiyacity-koyoen",
+      "jbda-andotown-andocombus",
+      "jbda-nabaricity-communitybus",
+      "jbda-yamatotakadacity-communitybuskibougou",
+      "jbda-higashiomicity-higasiohmisicommunitybus",
+      "jbda-omihachimancity-akakonbus",
     ],
   ),
   TransitFeed(
@@ -101,6 +139,277 @@ const List<TransitFeed> kTransitFeeds = [
     attribution: "Transit data © Himeji City (姫路市), CC-BY-2.1-JP.",
     centerLatitude: 34.8151,
     centerLongitude: 134.6854,
+  ),
+  TransitFeed(
+    id: "jbda-akashicity-tacobustacobusmini",
+    name: "Akashi Taco Bus",
+    description:
+        "Akashi Taco Bus and Taco Bus Mini, mirrored by Mobility Database.",
+    publisher: "明石市",
+    license: "CC-BY-4.0",
+    sourceUrl:
+        "https://files.mobilitydatabase.org/jbda-akashicity-tacobustacobusmini/latest.zip",
+    localFileName: "jbda-akashicity-tacobustacobusmini.zip",
+    attribution:
+        "Transit data © 明石市, CC-BY-4.0; mirrored by Mobility Database.",
+    centerLatitude: 34.68995,
+    centerLongitude: 134.923916,
+  ),
+  TransitFeed(
+    id: "jbda-andotown-andocombus",
+    name: "Ando Community Bus",
+    description: "Ando community bus, mirrored by Mobility Database.",
+    publisher: "安堵町",
+    license: "CC-BY-4.0",
+    sourceUrl:
+        "https://files.mobilitydatabase.org/jbda-andotown-andocombus/latest.zip",
+    localFileName: "jbda-andotown-andocombus.zip",
+    attribution:
+        "Transit data © 安堵町, CC-BY-4.0; mirrored by Mobility Database.",
+    centerLatitude: 34.60031,
+    centerLongitude: 135.761048,
+  ),
+  TransitFeed(
+    id: "jbda-chitetsu-chitetsubus",
+    name: "Toyama Chitetsu Bus",
+    description: "Toyama Chitetsu bus network, mirrored by Mobility Database.",
+    publisher: "富山地方鉄道",
+    license: "CC0-1.0",
+    sourceUrl:
+        "https://files.mobilitydatabase.org/jbda-chitetsu-chitetsubus/latest.zip",
+    localFileName: "jbda-chitetsu-chitetsubus.zip",
+    attribution:
+        "Transit data © 富山地方鉄道, CC0-1.0; mirrored by Mobility Database.",
+    centerLatitude: 36.733815,
+    centerLongitude: 137.24869,
+  ),
+  TransitFeed(
+    id: "jbda-chitetsu-chitetsushinaidensha",
+    name: "Toyama Chitetsu City Tram",
+    description:
+        "Toyama Chitetsu city tram network, mirrored by Mobility Database.",
+    publisher: "富山地方鉄道",
+    license: "CC0-1.0",
+    sourceUrl:
+        "https://files.mobilitydatabase.org/jbda-chitetsu-chitetsushinaidensha/latest.zip",
+    localFileName: "jbda-chitetsu-chitetsushinaidensha.zip",
+    attribution:
+        "Transit data © 富山地方鉄道, CC0-1.0; mirrored by Mobility Database.",
+    centerLatitude: 36.715942,
+    centerLongitude: 137.212628,
+  ),
+  TransitFeed(
+    id: "jbda-higashiomicity-higasiohmisicommunitybus",
+    name: "Higashiomi Chokotto Bus",
+    description: "Higashiomi Chokotto Bus, mirrored by Mobility Database.",
+    publisher: "東近江市",
+    license: "CC-BY-4.0",
+    sourceUrl:
+        "https://files.mobilitydatabase.org/jbda-higashiomicity-higasiohmisicommunitybus/latest.zip",
+    localFileName: "jbda-higashiomicity-higasiohmisicommunitybus.zip",
+    attribution:
+        "Transit data © 東近江市, CC-BY-4.0; mirrored by Mobility Database.",
+    centerLatitude: 35.129049,
+    centerLongitude: 136.248841,
+  ),
+  TransitFeed(
+    id: "jbda-kaetsunou-kaetsunouippan",
+    name: "Kaetsunou Bus",
+    description:
+        "Kaetsunou general route bus network around Kanazawa, mirrored by Mobility Database.",
+    publisher: "加越能バス",
+    license: "CC0-1.0",
+    sourceUrl:
+        "https://files.mobilitydatabase.org/jbda-kaetsunou-kaetsunouippan/latest.zip",
+    localFileName: "jbda-kaetsunou-kaetsunouippan.zip",
+    attribution:
+        "Transit data © 加越能バス, CC0-1.0; mirrored by Mobility Database.",
+    centerLatitude: 36.740017,
+    centerLongitude: 136.9026,
+  ),
+  TransitFeed(
+    id: "jbda-kakogawacity-kakobuskakobusmini",
+    name: "Kakogawa Kako Bus",
+    description:
+        "Kakogawa Kako Bus and Kako Bus Mini, mirrored by Mobility Database.",
+    publisher: "加古川市",
+    license: "CC-BY-2.1-JP",
+    sourceUrl:
+        "https://files.mobilitydatabase.org/jbda-kakogawacity-kakobuskakobusmini/latest.zip",
+    localFileName: "jbda-kakogawacity-kakobuskakobusmini.zip",
+    attribution:
+        "Transit data © 加古川市, CC-BY-2.1-JP; mirrored by Mobility Database.",
+    centerLatitude: 34.779365,
+    centerLongitude: 134.845272,
+  ),
+  TransitFeed(
+    id: "jbda-komatsucity-blue",
+    name: "Komatsu North Loop",
+    description: "Komatsu city north loop bus, mirrored by Mobility Database.",
+    publisher: "小松市",
+    license: "CC0-1.0",
+    sourceUrl:
+        "https://files.mobilitydatabase.org/jbda-komatsucity-blue/latest.zip",
+    localFileName: "jbda-komatsucity-blue.zip",
+    attribution: "Transit data © 小松市, CC0-1.0; mirrored by Mobility Database.",
+    centerLatitude: 36.414092,
+    centerLongitude: 136.459254,
+  ),
+  TransitFeed(
+    id: "jbda-komatsucity-kibagatasen",
+    name: "Komatsu Kibagata Line",
+    description: "Komatsu Kibagata bus line, mirrored by Mobility Database.",
+    publisher: "小松市",
+    license: "CC0-1.0",
+    sourceUrl:
+        "https://files.mobilitydatabase.org/jbda-komatsucity-kibagatasen/latest.zip",
+    localFileName: "jbda-komatsucity-kibagatasen.zip",
+    attribution: "Transit data © 小松市, CC0-1.0; mirrored by Mobility Database.",
+    centerLatitude: 36.373056,
+    centerLongitude: 136.458775,
+  ),
+  TransitFeed(
+    id: "jbda-komatsucity-orange",
+    name: "Komatsu South Loop",
+    description: "Komatsu city south loop bus, mirrored by Mobility Database.",
+    publisher: "小松市",
+    license: "CC0-1.0",
+    sourceUrl:
+        "https://files.mobilitydatabase.org/jbda-komatsucity-orange/latest.zip",
+    localFileName: "jbda-komatsucity-orange.zip",
+    attribution: "Transit data © 小松市, CC0-1.0; mirrored by Mobility Database.",
+    centerLatitude: 36.395266,
+    centerLongitude: 136.470707,
+  ),
+  TransitFeed(
+    id: "jbda-manyosen-manyosen",
+    name: "Manyosen Tram",
+    description: "Manyosen tram network, mirrored by Mobility Database.",
+    publisher: "万葉線",
+    license: "CC0-1.0",
+    sourceUrl:
+        "https://files.mobilitydatabase.org/jbda-manyosen-manyosen/latest.zip",
+    localFileName: "jbda-manyosen-manyosen.zip",
+    attribution: "Transit data © 万葉線, CC0-1.0; mirrored by Mobility Database.",
+    centerLatitude: 36.765312,
+    centerLongitude: 137.06241,
+  ),
+  TransitFeed(
+    id: "jbda-nabaricity-communitybus",
+    name: "Nabari Community Bus",
+    description: "Nabari community bus, mirrored by Mobility Database.",
+    publisher: "名張市",
+    license: "CC-BY-4.0",
+    sourceUrl:
+        "https://files.mobilitydatabase.org/jbda-nabaricity-communitybus/latest.zip",
+    localFileName: "jbda-nabaricity-communitybus.zip",
+    attribution:
+        "Transit data © 名張市, CC-BY-4.0; mirrored by Mobility Database.",
+    centerLatitude: 34.622912,
+    centerLongitude: 136.115424,
+  ),
+  TransitFeed(
+    id: "jbda-nishinomiyacity-guruttonamaze",
+    name: "Nishinomiya Gurutto Namaze",
+    description:
+        "Nishinomiya Gurutto Namaze community bus, mirrored by Mobility Database.",
+    publisher: "西宮市",
+    license: "CC-BY-2.1-JP",
+    sourceUrl:
+        "https://files.mobilitydatabase.org/jbda-nishinomiyacity-guruttonamaze/latest.zip",
+    localFileName: "jbda-nishinomiyacity-guruttonamaze.zip",
+    attribution:
+        "Transit data © 西宮市, CC-BY-2.1-JP; mirrored by Mobility Database.",
+    centerLatitude: 34.819407,
+    centerLongitude: 135.328093,
+  ),
+  TransitFeed(
+    id: "jbda-nishinomiyacity-koyoen",
+    name: "Nishinomiya Koyoen Bus",
+    description:
+        "Nishinomiya Koyoen community bus, mirrored by Mobility Database.",
+    publisher: "西宮市",
+    license: "CC-BY-4.0",
+    sourceUrl:
+        "https://files.mobilitydatabase.org/jbda-nishinomiyacity-koyoen/latest.zip",
+    localFileName: "jbda-nishinomiyacity-koyoen.zip",
+    attribution:
+        "Transit data © 西宮市, CC-BY-4.0; mirrored by Mobility Database.",
+    centerLatitude: 34.766085,
+    centerLongitude: 135.327792,
+  ),
+  TransitFeed(
+    id: "jbda-nonoichicity-communitybus",
+    name: "Nonoichi Community Bus",
+    description:
+        "Nonoichi community bus network, mirrored by Mobility Database.",
+    publisher: "野々市市",
+    license: "CC-BY-4.0",
+    sourceUrl:
+        "https://files.mobilitydatabase.org/jbda-nonoichicity-communitybus/latest.zip",
+    localFileName: "jbda-nonoichicity-communitybus.zip",
+    attribution:
+        "Transit data © 野々市市, CC-BY-4.0; mirrored by Mobility Database.",
+    centerLatitude: 36.524932,
+    centerLongitude: 136.59714,
+  ),
+  TransitFeed(
+    id: "jbda-omihachimancity-akakonbus",
+    name: "Omihachiman Akakon Bus",
+    description: "Omihachiman Akakon Bus, mirrored by Mobility Database.",
+    publisher: "近江八幡市",
+    license: "CC-BY-4.0",
+    sourceUrl:
+        "https://files.mobilitydatabase.org/jbda-omihachimancity-akakonbus/latest.zip",
+    localFileName: "jbda-omihachimancity-akakonbus.zip",
+    attribution:
+        "Transit data © 近江八幡市, CC-BY-4.0; mirrored by Mobility Database.",
+    centerLatitude: 35.135921,
+    centerLongitude: 136.096512,
+  ),
+  TransitFeed(
+    id: "jbda-takasagocity-jotonbus",
+    name: "Takasago Joton Bus",
+    description: "Takasago Joton Bus, mirrored by Mobility Database.",
+    publisher: "高砂市",
+    license: "CC-BY-2.1-JP",
+    sourceUrl:
+        "https://files.mobilitydatabase.org/jbda-takasagocity-jotonbus/latest.zip",
+    localFileName: "jbda-takasagocity-jotonbus.zip",
+    attribution:
+        "Transit data © 高砂市, CC-BY-2.1-JP; mirrored by Mobility Database.",
+    centerLatitude: 34.77986,
+    centerLongitude: 134.792922,
+  ),
+  TransitFeed(
+    id: "jbda-uchinadatown-communitybus",
+    name: "Uchinada Community Bus",
+    description:
+        "Uchinada community bus network, mirrored by Mobility Database.",
+    publisher: "内灘町",
+    license: "CC-BY-4.0",
+    sourceUrl:
+        "https://files.mobilitydatabase.org/jbda-uchinadatown-communitybus/latest.zip",
+    localFileName: "jbda-uchinadatown-communitybus.zip",
+    attribution:
+        "Transit data © 内灘町, CC-BY-4.0; mirrored by Mobility Database.",
+    centerLatitude: 36.660712,
+    centerLongitude: 136.65223,
+  ),
+  TransitFeed(
+    id: "jbda-yamatotakadacity-communitybuskibougou",
+    name: "Yamatotakada Kibou Bus",
+    description:
+        "Yamatotakada Kibou community bus, mirrored by Mobility Database.",
+    publisher: "大和高田市",
+    license: "CC-BY-4.0",
+    sourceUrl:
+        "https://files.mobilitydatabase.org/jbda-yamatotakadacity-communitybuskibougou/latest.zip",
+    localFileName: "jbda-yamatotakadacity-communitybuskibougou.zip",
+    attribution:
+        "Transit data © 大和高田市, CC-BY-4.0; mirrored by Mobility Database.",
+    centerLatitude: 34.502817,
+    centerLongitude: 135.742643,
   ),
   TransitFeed(
     id: "kanazawa-flatbus",
