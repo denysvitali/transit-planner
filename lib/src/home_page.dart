@@ -11,7 +11,10 @@ import 'location_search_page.dart';
 import 'models.dart';
 import 'theme.dart';
 
-const _fallbackStyle = 'https://demotiles.maplibre.org/style.json';
+// OpenFreeMap "Liberty" — community-run free vector basemap with streets,
+// labels, transit lines, etc. No API key, no usage limits. CC-BY OSM data.
+// https://openfreemap.org/
+const _fallbackStyle = 'https://tiles.openfreemap.org/styles/liberty';
 
 const _feedSelectionStorageKey = 'selected_feed_id';
 
@@ -414,6 +417,11 @@ class _HomePageState extends State<HomePage> {
                     onStyleLoadedCallback: _onMapStyleLoaded,
                   ),
                 ),
+                const Positioned(
+                  left: AppSpacing.xs,
+                  bottom: AppSpacing.xs,
+                  child: _MapAttribution(),
+                ),
                 Positioned(
                   left: 0,
                   right: 0,
@@ -447,6 +455,32 @@ class _HomePageState extends State<HomePage> {
                 ),
               ],
             ),
+    );
+  }
+}
+
+/// Tiny attribution chip pinned to the bottom-left of the map. OpenFreeMap
+/// tiles are built on OpenStreetMap data (ODbL) and crediting both is part
+/// of the usage terms.
+class _MapAttribution extends StatelessWidget {
+  const _MapAttribution();
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          child: Text(
+            '© OpenStreetMap · OpenFreeMap',
+            style: TextStyle(fontSize: 10, color: Colors.black87),
+          ),
+        ),
+      ),
     );
   }
 }

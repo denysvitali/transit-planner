@@ -4,7 +4,8 @@ import 'package:maplibre_gl/maplibre_gl.dart';
 import 'models.dart';
 import 'theme.dart';
 
-const _mapStyleUrl = 'https://demotiles.maplibre.org/style.json';
+// OpenFreeMap "Liberty" — see lib/src/home_page.dart for rationale.
+const _mapStyleUrl = 'https://tiles.openfreemap.org/styles/liberty';
 
 /// Detail view for a single [Itinerary].
 ///
