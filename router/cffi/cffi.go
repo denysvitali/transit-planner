@@ -12,10 +12,17 @@ package cffi
 import (
 	"encoding/json"
 	"errors"
+	"math"
+	"sort"
 	"sync"
 	"sync/atomic"
 
 	"github.com/denysvitali/transit-planner/router"
+)
+
+const (
+	maxEndpointCandidates = 8
+	walkMetersPerSecond   = 1.4
 )
 
 // feedHandle bundles a parsed GTFS feed with its prebuilt engine so that
@@ -32,11 +39,21 @@ var (
 	nextHandle atomic.Int64
 )
 
-// openRequest opens a GTFS feed and returns a handle that subsequent calls
-// reference. Exactly one of FeedZip and FeedDir must be set.
-type openRequest struct {
+// feedSource identifies one GTFS feed in a merged request. Prefix is used to
+// namespace IDs when more than one source is supplied.
+type feedSource struct {
+	Prefix  string `json:"prefix,omitempty"`
 	FeedDir string `json:"feedDir,omitempty"`
 	FeedZip string `json:"feedZip,omitempty"`
+}
+
+// openRequest opens a GTFS feed and returns a handle that subsequent calls
+// reference. Use either Feeds for a merged multi-operator network, or exactly
+// one of FeedZip and FeedDir for the legacy single-feed path.
+type openRequest struct {
+	FeedDir string       `json:"feedDir,omitempty"`
+	FeedZip string       `json:"feedZip,omitempty"`
+	Feeds   []feedSource `json:"feeds,omitempty"`
 }
 
 type openResponse struct {
@@ -66,17 +83,31 @@ type stopsResponse struct {
 }
 
 // routeRequest is the routing payload. Provide either Handle (the fast path
-// — feed reused across calls) or FeedZip/FeedDir (the legacy one-shot path
-// that loads the feed for this call only and discards it).
+// — feed reused across calls), Feeds for a merged one-shot request, or
+// FeedZip/FeedDir (the legacy one-shot path that loads the feed for this call
+// only and discards it).
 type routeRequest struct {
-	Handle       int64  `json:"handle,omitempty"`
-	FeedDir      string `json:"feedDir,omitempty"`
-	FeedZip      string `json:"feedZip,omitempty"`
-	From         string `json:"from"`
-	To           string `json:"to"`
-	Departure    int    `json:"departure"`
-	MaxTransfers int    `json:"maxTransfers"`
-	RouteTypes   []int  `json:"routeTypes,omitempty"`
+	Handle       int64        `json:"handle,omitempty"`
+	FeedDir      string       `json:"feedDir,omitempty"`
+	FeedZip      string       `json:"feedZip,omitempty"`
+	Feeds        []feedSource `json:"feeds,omitempty"`
+	From         string       `json:"from"`
+	To           string       `json:"to"`
+	FromName     string       `json:"fromName,omitempty"`
+	FromLat      *float64     `json:"fromLat,omitempty"`
+	FromLon      *float64     `json:"fromLon,omitempty"`
+	ToName       string       `json:"toName,omitempty"`
+	ToLat        *float64     `json:"toLat,omitempty"`
+	ToLon        *float64     `json:"toLon,omitempty"`
+	Departure    int          `json:"departure"`
+	MaxTransfers int          `json:"maxTransfers"`
+	RouteTypes   []int        `json:"routeTypes,omitempty"`
+}
+
+type routeEndpoint struct {
+	stop        router.Stop
+	point       router.Stop
+	walkSeconds int
 }
 
 type legPayload struct {
@@ -110,7 +141,7 @@ func OpenJSON(raw string) string {
 	if err := json.Unmarshal([]byte(raw), &req); err != nil {
 		return errorJSON("invalid request JSON: " + err.Error())
 	}
-	feed, err := loadFeed(req.FeedDir, req.FeedZip)
+	feed, err := loadFeed(req.FeedDir, req.FeedZip, req.Feeds)
 	if err != nil {
 		return errorJSON("load feed: " + err.Error())
 	}
@@ -170,15 +201,12 @@ func RouteJSON(raw string) string {
 		return errorJSON("invalid request JSON: " + err.Error())
 	}
 
-	engine, err := engineFor(req)
+	h, engine, err := engineFor(req)
 	if err != nil {
 		return errorJSON(err.Error())
 	}
 
-	itinerary, err := engine.Route(req.From, req.To, req.Departure, router.Options{
-		MaxTransfers:      req.MaxTransfers,
-		AllowedRouteTypes: allowedRouteTypes(req.RouteTypes),
-	})
+	itinerary, err := routeWithEndpoints(h.feed, engine, req)
 	if err != nil {
 		return errorJSON(err.Error())
 	}
@@ -218,22 +246,159 @@ func allowedRouteTypes(routeTypes []int) map[int]bool {
 	return allowed
 }
 
-func engineFor(req routeRequest) (*router.Engine, error) {
+func routeWithEndpoints(feed *router.Feed, engine *router.Engine, req routeRequest) (router.Itinerary, error) {
+	options := router.Options{
+		MaxTransfers:      req.MaxTransfers,
+		AllowedRouteTypes: allowedRouteTypes(req.RouteTypes),
+	}
+	origins, err := endpointCandidates(feed, req.From, req.FromName, req.FromLat, req.FromLon, "origin")
+	if err != nil {
+		return router.Itinerary{}, err
+	}
+	destinations, err := endpointCandidates(feed, req.To, req.ToName, req.ToLat, req.ToLon, "destination")
+	if err != nil {
+		return router.Itinerary{}, err
+	}
+
+	var (
+		best    router.Itinerary
+		bestSet bool
+		lastErr error
+	)
+	for _, origin := range origins {
+		for _, destination := range destinations {
+			itinerary, err := engine.Route(origin.stop.ID, destination.stop.ID, req.Departure+origin.walkSeconds, options)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			itinerary = withEndpointWalks(itinerary, origin, destination, req.Departure)
+			if !bestSet || itinerary.Arrival < best.Arrival {
+				best = itinerary
+				bestSet = true
+			}
+		}
+	}
+	if !bestSet {
+		if lastErr != nil {
+			return router.Itinerary{}, lastErr
+		}
+		return router.Itinerary{}, errors.New("destination unreachable")
+	}
+	return best, nil
+}
+
+func endpointCandidates(feed *router.Feed, stopID, name string, lat, lon *float64, syntheticID string) ([]routeEndpoint, error) {
+	if lat == nil || lon == nil {
+		stop, ok := feed.Stops[stopID]
+		if !ok {
+			return nil, errors.New("stop not found")
+		}
+		return []routeEndpoint{{stop: stop, point: stop}}, nil
+	}
+	pointName := name
+	if pointName == "" {
+		pointName = stopID
+	}
+	point := router.Stop{
+		ID:   "__" + syntheticID,
+		Name: pointName,
+		Lat:  *lat,
+		Lon:  *lon,
+	}
+	candidates := make([]routeEndpoint, 0, len(feed.Stops))
+	for _, stop := range feed.Stops {
+		distance := router.HaversineMeters(point.Lat, point.Lon, stop.Lat, stop.Lon)
+		candidates = append(candidates, routeEndpoint{
+			stop:        stop,
+			point:       point,
+			walkSeconds: int(math.Ceil(distance / walkMetersPerSecond)),
+		})
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].walkSeconds != candidates[j].walkSeconds {
+			return candidates[i].walkSeconds < candidates[j].walkSeconds
+		}
+		return candidates[i].stop.ID < candidates[j].stop.ID
+	})
+	if len(candidates) > maxEndpointCandidates {
+		candidates = candidates[:maxEndpointCandidates]
+	}
+	return candidates, nil
+}
+
+func withEndpointWalks(itinerary router.Itinerary, origin, destination routeEndpoint, departure int) router.Itinerary {
+	legs := make([]router.Leg, 0, len(itinerary.Legs)+2)
+	if origin.walkSeconds > 0 {
+		legs = append(legs, router.Leg{
+			Mode:      "walk",
+			FromStop:  origin.point,
+			ToStop:    origin.stop,
+			Departure: departure,
+			Arrival:   departure + origin.walkSeconds,
+		})
+	}
+	legs = append(legs, itinerary.Legs...)
+	if destination.walkSeconds > 0 {
+		walkDeparture := itinerary.Arrival
+		legs = append(legs, router.Leg{
+			Mode:      "walk",
+			FromStop:  destination.stop,
+			ToStop:    destination.point,
+			Departure: walkDeparture,
+			Arrival:   walkDeparture + destination.walkSeconds,
+		})
+		itinerary.Arrival += destination.walkSeconds
+	}
+	itinerary.Legs = legs
+	return itinerary
+}
+
+func engineFor(req routeRequest) (*feedHandle, *router.Engine, error) {
 	if req.Handle != 0 {
 		h, ok := lookupHandle(req.Handle)
 		if !ok {
-			return nil, errors.New("unknown handle")
+			return nil, nil, errors.New("unknown handle")
 		}
-		return h.engine, nil
+		return h, h.engine, nil
 	}
-	feed, err := loadFeed(req.FeedDir, req.FeedZip)
+	feed, err := loadFeed(req.FeedDir, req.FeedZip, req.Feeds)
 	if err != nil {
-		return nil, errors.New("load feed: " + err.Error())
+		return nil, nil, errors.New("load feed: " + err.Error())
 	}
-	return router.NewEngine(feed), nil
+	engine := router.NewEngine(feed)
+	return &feedHandle{feed: feed, engine: engine}, engine, nil
 }
 
-func loadFeed(dir, zip string) (*router.Feed, error) {
+func loadFeed(dir, zip string, sources []feedSource) (*router.Feed, error) {
+	if len(sources) > 0 {
+		if dir != "" || zip != "" {
+			return nil, errors.New("specify either feeds or one of feedZip/feedDir")
+		}
+		return loadMergedFeeds(sources)
+	}
+	return loadSingleFeed(dir, zip)
+}
+
+func loadMergedFeeds(sources []feedSource) (*router.Feed, error) {
+	feeds := make(map[string]*router.Feed, len(sources))
+	for _, source := range sources {
+		if source.Prefix == "" {
+			return nil, errors.New("merged feeds require a prefix")
+		}
+		if _, exists := feeds[source.Prefix]; exists {
+			return nil, errors.New("duplicate merged feed prefix: " + source.Prefix)
+		}
+		feed, err := loadSingleFeed(source.FeedDir, source.FeedZip)
+		if err != nil {
+			return nil, errors.New(source.Prefix + ": " + err.Error())
+		}
+		feeds[source.Prefix] = feed
+	}
+	return router.Merge(feeds), nil
+}
+
+func loadSingleFeed(dir, zip string) (*router.Feed, error) {
 	switch {
 	case zip != "" && dir != "":
 		return nil, errors.New("specify exactly one of feedZip or feedDir")

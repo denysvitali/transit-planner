@@ -132,7 +132,7 @@ class _FeedSectionState extends State<_FeedSection> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Transit feeds',
+              'Transit networks',
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: AppSpacing.s),
@@ -181,7 +181,7 @@ class _FeedSectionState extends State<_FeedSection> {
                 ),
               ),
             Text(
-              'Default for next launch: ${selected?.name ?? kDefaultFeedId}',
+              'Default network for next launch: ${selected?.name ?? kDefaultFeedId}',
               style: Theme.of(context).textTheme.titleSmall,
             ),
           ],
@@ -208,7 +208,10 @@ class _AboutSection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.s),
-        Text('Transit data sources', style: theme.textTheme.titleMedium),
+        Text(
+          'Transit data sources and networks',
+          style: theme.textTheme.titleMedium,
+        ),
         const SizedBox(height: AppSpacing.xs),
         ...kTransitFeeds.map(
           (feed) => Padding(

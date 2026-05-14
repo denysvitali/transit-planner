@@ -88,6 +88,72 @@ func TestRouteJSONRoundTrip(t *testing.T) {
 	}
 }
 
+func TestRouteJSONUsesCoordinateAccessAndEgressCandidates(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, "stops.txt", `stop_id,stop_name,stop_lat,stop_lon
+O1,Origin nearest,0,0
+O2,Origin service,0,0.01
+D2,Destination service,0,0.03
+D1,Destination nearest,0,0.04
+`)
+	writeFixture(t, dir, "routes.txt", `route_id,route_short_name,route_long_name,route_type
+R1,1,Line 1,3
+`)
+	writeFixture(t, dir, "trips.txt", `route_id,service_id,trip_id
+R1,weekday,T1
+`)
+	writeFixture(t, dir, "stop_times.txt", `trip_id,arrival_time,departure_time,stop_id,stop_sequence
+T1,08:10:00,08:10:00,O2,1
+T1,08:20:00,08:20:00,D2,2
+`)
+
+	fromLat, fromLon := 0.0, 0.0
+	toLat, toLon := 0.0, 0.04
+	req := routeRequest{
+		FeedDir:      dir,
+		From:         "O1",
+		To:           "D1",
+		FromName:     "Origin point",
+		FromLat:      &fromLat,
+		FromLon:      &fromLon,
+		ToName:       "Destination point",
+		ToLat:        &toLat,
+		ToLon:        &toLon,
+		Departure:    7*3600 + 55*60,
+		MaxTransfers: 0,
+	}
+	reqBytes, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	respJSON := RouteJSON(string(reqBytes))
+
+	var maybeErr errorResponse
+	if err := json.Unmarshal([]byte(respJSON), &maybeErr); err == nil && maybeErr.Error != "" {
+		t.Fatalf("routeJSON returned error: %s", maybeErr.Error)
+	}
+	var resp routeResponse
+	if err := json.Unmarshal([]byte(respJSON), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v (raw=%s)", err, respJSON)
+	}
+	if len(resp.Legs) != 3 {
+		t.Fatalf("legs = %d, want access walk, transit, egress walk", len(resp.Legs))
+	}
+	if resp.Legs[0].Mode != "walk" || resp.Legs[0].FromStop.ID != "__origin" || resp.Legs[0].ToStop.ID != "O2" {
+		t.Fatalf("access leg = %#v, want synthetic origin walk to O2", resp.Legs[0])
+	}
+	if resp.Legs[1].Mode != "transit" || resp.Legs[1].FromStop.ID != "O2" || resp.Legs[1].ToStop.ID != "D2" {
+		t.Fatalf("transit leg = %#v, want O2 to D2", resp.Legs[1])
+	}
+	if resp.Legs[2].Mode != "walk" || resp.Legs[2].FromStop.ID != "D2" || resp.Legs[2].ToStop.ID != "__destination" {
+		t.Fatalf("egress leg = %#v, want D2 walk to synthetic destination", resp.Legs[2])
+	}
+	if resp.Arrival <= 8*3600+20*60 {
+		t.Fatalf("arrival = %d, want after transit arrival due to egress walk", resp.Arrival)
+	}
+}
+
 // TestRouteJSONFeedZipToei wires the JSON surface through the real Toei feed
 // vendored under assets/sample_toei_train/. It only checks that the request
 // is accepted and a JSON response is produced — the underlying router is

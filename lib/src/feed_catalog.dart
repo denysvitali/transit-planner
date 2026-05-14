@@ -1,7 +1,8 @@
-// Catalog of known GTFS feeds for the app.
+// Catalog of known GTFS feeds and merged regional networks for the app.
 //
-// The list is intentionally small and curated so we can keep onboarding
-// straightforward while adding more Japanese operators over time.
+// Region and country entries expand to the public, no-key GTFS feeds we know
+// how to fetch today. The underlying providers stay visible for licensing and
+// attribution, but users can select a whole transport network.
 
 class TransitFeed {
   const TransitFeed({
@@ -17,6 +18,7 @@ class TransitFeed {
     required this.centerLongitude,
     this.bundledAssetPath,
     this.defaultDepartureHour,
+    this.componentFeedIds = const [],
   });
 
   final String id;
@@ -31,13 +33,79 @@ class TransitFeed {
   final int? defaultDepartureHour;
   final double centerLatitude;
   final double centerLongitude;
+  final List<String> componentFeedIds;
 
   bool get isBundled => bundledAssetPath != null;
+  bool get isCollection => componentFeedIds.isNotEmpty;
 }
 
 const String kDefaultFeedId = 'toei-train';
 
 const List<TransitFeed> kTransitFeeds = [
+  TransitFeed(
+    id: 'jp-all',
+    name: 'Japan - available public feeds',
+    description:
+        'All no-key Japanese GTFS feeds currently known to the app, merged '
+        'into one local routing network.',
+    publisher: 'Multiple public GTFS publishers',
+    license: 'Mixed open-data licences',
+    sourceUrl: 'Multiple GTFS endpoints',
+    localFileName: '',
+    attribution:
+        'Merged network of the Japanese feeds listed below. Licences vary by '
+        'publisher; see each feed attribution.',
+    centerLatitude: 35.681236,
+    centerLongitude: 139.767125,
+    defaultDepartureHour: 8,
+    componentFeedIds: [
+      'toei-train',
+      'toei-bus',
+      'kanazawa-flatbus',
+      'kanazawa-hakusan-meguru',
+      'kanazawa-tsubata-bus',
+    ],
+  ),
+  TransitFeed(
+    id: 'tokyo-toei',
+    name: 'Tokyo Toei network',
+    description:
+        'Tokyo Metropolitan Bureau of Transportation subway, tram, liner, and '
+        'municipal bus feeds merged into one network.',
+    publisher: 'Tokyo Metropolitan Bureau of Transportation (東京都交通局)',
+    license: 'CC-BY-4.0',
+    sourceUrl: 'Multiple ODPT GTFS endpoints',
+    localFileName: '',
+    attribution:
+        'Transit data © 東京都交通局 (Tokyo Metropolitan Bureau of '
+        'Transportation), CC-BY 4.0, via the Public Transportation Open '
+        'Data Center (ODPT).',
+    centerLatitude: 35.681236,
+    centerLongitude: 139.767125,
+    defaultDepartureHour: 8,
+    componentFeedIds: ['toei-train', 'toei-bus'],
+  ),
+  TransitFeed(
+    id: 'kanazawa-region',
+    name: 'Kanazawa region',
+    description:
+        'Kanazawa and nearby Hakusan/Tsubata public bus feeds merged into one '
+        'regional network.',
+    publisher: 'Multiple Ishikawa public-data publishers',
+    license: 'CC-BY-4.0',
+    sourceUrl: 'Multiple municipal GTFS endpoints',
+    localFileName: '',
+    attribution:
+        'Merged network of Kanazawa, Hakusan, and Tsubata public GTFS feeds; '
+        'see each feed attribution below.',
+    centerLatitude: 36.5608,
+    centerLongitude: 136.6566,
+    componentFeedIds: [
+      'kanazawa-flatbus',
+      'kanazawa-hakusan-meguru',
+      'kanazawa-tsubata-bus',
+    ],
+  ),
   TransitFeed(
     id: 'toei-train',
     name: 'Tokyo Toei Subway',
@@ -135,4 +203,14 @@ TransitFeed? findFeedById(String id) {
     }
   }
   return null;
+}
+
+List<TransitFeed> componentFeedsFor(TransitFeed feed) {
+  if (!feed.isCollection) {
+    return [feed];
+  }
+  return feed.componentFeedIds
+      .map(findFeedById)
+      .whereType<TransitFeed>()
+      .toList(growable: false);
 }

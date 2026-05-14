@@ -33,9 +33,9 @@ Future<LocalTransitRouter> openFeedRouter(TransitFeed feed) async {
     return const MockTransitRouter();
   }
   try {
-    final zipPath = await _stageFeed(feed);
+    final stagedFeeds = await _stageFeeds(feed);
     final native = _NativeBindings.instance;
-    final handle = native.open(zipPath);
+    final handle = native.open(stagedFeeds);
     final stops = native.stops(handle);
     return _GoFfiRouter._(native: native, handle: handle, stops: stops);
   } catch (error, stack) {
@@ -55,13 +55,29 @@ bool get goFfiSupported =>
     Platform.isMacOS ||
     Platform.isWindows;
 
-/// Stages a feed into app cache and opens it through the Go FFI surface.
-/// Returns a long-lived router whose underlying feed handle stays alive for
-/// the lifetime of the process.
-///
-/// Falls back to [MockTransitRouter] if anything along the way fails — the
-/// UI should always remain usable even when the FFI is unavailable.
+Future<List<_StagedFeed>> _stageFeeds(TransitFeed feed) async {
+  final components = componentFeedsFor(feed);
+  if (components.isEmpty) {
+    throw StateError('collection feed ${feed.id} has no known components');
+  }
+  if (components.length == 1 && !feed.isCollection) {
+    final path = await _stageFeed(components.single);
+    return [_StagedFeed(path: path)];
+  }
+
+  final staged = <_StagedFeed>[];
+  for (final component in components) {
+    final path = await _stageFeed(component);
+    staged.add(_StagedFeed(prefix: component.id, path: path));
+  }
+  return staged;
+}
+
+/// Stages a single feed into app cache.
 Future<String> _stageFeed(TransitFeed feed) async {
+  if (feed.isCollection) {
+    throw StateError('collection feed ${feed.id} must be expanded first');
+  }
   final supportDir = await getApplicationSupportDirectory();
   final feedDir = Directory('${supportDir.path}/$_kFeedCacheDir/${feed.id}');
   if (!feedDir.existsSync()) {
@@ -146,6 +162,13 @@ String _cacheStampWithHash(TransitFeed feed, String hash) =>
 
 String _cacheStamp(TransitFeed feed) => feed.sourceUrl;
 
+class _StagedFeed {
+  const _StagedFeed({required this.path, this.prefix});
+
+  final String path;
+  final String? prefix;
+}
+
 /// Thin wrapper that owns the symbols looked up from the Go-built shared
 /// library. The C ABI is JSON-in / JSON-out, with the response pointer
 /// owned by Go and freed via [TP_Free].
@@ -200,8 +223,16 @@ class _NativeBindings {
     }
   }
 
-  int open(String feedZipPath) {
-    final resp = _call(open_, {'feedZip': feedZipPath});
+  int open(List<_StagedFeed> feeds) {
+    if (feeds.length == 1 && feeds.single.prefix == null) {
+      final resp = _call(open_, {'feedZip': feeds.single.path});
+      return (resp['handle'] as num).toInt();
+    }
+    final resp = _call(open_, {
+      'feeds': [
+        for (final feed in feeds) {'prefix': feed.prefix, 'feedZip': feed.path},
+      ],
+    });
     return (resp['handle'] as num).toInt();
   }
 
@@ -303,6 +334,8 @@ class _GoFfiRouter implements LocalTransitRouter {
         'handle': _handle,
         'from': request.origin.id,
         'to': request.destination.id,
+        ..._endpointPayload('from', request.originPoint),
+        ..._endpointPayload('to', request.destinationPoint),
         'departure': secondsFromMidnight,
         'maxTransfers': request.maxTransfers,
         'routeTypes': _routeTypesForModes(request.modes),
@@ -418,5 +451,14 @@ class _GoFfiRouter implements LocalTransitRouter {
       }
     }
     return routeTypes.toList(growable: false);
+  }
+
+  Map<String, Object> _endpointPayload(String prefix, RoutePoint? point) {
+    if (point == null || point.isStop) return const {};
+    return {
+      '${prefix}Name': point.name,
+      '${prefix}Lat': point.latitude,
+      '${prefix}Lon': point.longitude,
+    };
   }
 }

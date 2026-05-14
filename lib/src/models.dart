@@ -29,12 +29,12 @@ class RoutePoint {
 
   /// Construct a [RoutePoint] from an existing GTFS [TransitStop].
   factory RoutePoint.fromStop(TransitStop stop) => RoutePoint(
-        name: stop.name,
-        latitude: stop.latitude,
-        longitude: stop.longitude,
-        snappedStop: stop,
-        isStop: true,
-      );
+    name: stop.name,
+    latitude: stop.latitude,
+    longitude: stop.longitude,
+    snappedStop: stop,
+    isStop: true,
+  );
 
   final String name;
   final double latitude;
@@ -59,6 +59,8 @@ class RouteRequest {
     required this.departure,
     required this.modes,
     required this.maxTransfers,
+    this.originPoint,
+    this.destinationPoint,
   });
 
   final TransitStop origin;
@@ -66,6 +68,8 @@ class RouteRequest {
   final DateTime departure;
   final Set<TransitMode> modes;
   final int maxTransfers;
+  final RoutePoint? originPoint;
+  final RoutePoint? destinationPoint;
 }
 
 class ItineraryLeg {

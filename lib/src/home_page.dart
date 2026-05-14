@@ -218,6 +218,8 @@ class _HomePageState extends State<HomePage> {
       departure: _earliestDepartureForFeed(),
       modes: _modes,
       maxTransfers: _maxTransfers,
+      originPoint: origin,
+      destinationPoint: destination,
     );
     try {
       final itineraries = await router.route(request);
@@ -262,8 +264,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _pickDepartureTime() async {
-    final initial = _departureTime ??
-        TimeOfDay.fromDateTime(_earliestDepartureForFeed());
+    final initial =
+        _departureTime ?? TimeOfDay.fromDateTime(_earliestDepartureForFeed());
     final picked = await showTimePicker(
       context: context,
       initialTime: initial,
@@ -382,7 +384,9 @@ class _HomePageState extends State<HomePage> {
           await controller.addLine(
             LineOptions(
               geometry: geometry,
-              lineColor: leg.mode == TransitMode.walk ? walkColor : transitColor,
+              lineColor: leg.mode == TransitMode.walk
+                  ? walkColor
+                  : transitColor,
               lineWidth: 4.0,
             ),
           ),
@@ -774,9 +778,9 @@ class _ResultsSheet extends StatelessWidget {
                         loading
                             ? 'Planning…'
                             : itineraries.isEmpty
-                                ? 'No routes yet'
-                                : '${itineraries.length} route'
-                                    '${itineraries.length == 1 ? '' : 's'}',
+                            ? 'No routes yet'
+                            : '${itineraries.length} route'
+                                  '${itineraries.length == 1 ? '' : 's'}',
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w700,
                         ),
@@ -805,7 +809,7 @@ class _ResultsSheet extends StatelessWidget {
                 child: DropdownButtonFormField<TransitFeed>(
                   isExpanded: true,
                   decoration: const InputDecoration(
-                    labelText: 'Feed',
+                    labelText: 'Network',
                     isDense: true,
                   ),
                   initialValue: feed,
@@ -849,9 +853,7 @@ class _ResultsSheet extends StatelessWidget {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.m,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.m),
                 child: Row(
                   children: [
                     const Icon(Icons.transfer_within_a_station),
@@ -906,10 +908,7 @@ class _ResultsSheet extends StatelessWidget {
               ),
               const Divider(height: 1),
               if (!loading && itineraries.isEmpty)
-                _NoItinerariesState(
-                  origin: origin,
-                  destination: destination,
-                ),
+                _NoItinerariesState(origin: origin, destination: destination),
               for (final itinerary in itineraries)
                 Padding(
                   padding: const EdgeInsets.symmetric(
