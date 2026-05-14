@@ -86,6 +86,9 @@ func TestRouteJSONRoundTrip(t *testing.T) {
 	if resp.Legs[1].Mode != "walk" {
 		t.Fatalf("middle leg mode = %q, want walk", resp.Legs[1].Mode)
 	}
+	if resp.Legs[0].RouteName != "1" {
+		t.Fatalf("route name = %q, want short name 1", resp.Legs[0].RouteName)
+	}
 }
 
 func TestRouteJSONUsesCoordinateAccessAndEgressCandidates(t *testing.T) {

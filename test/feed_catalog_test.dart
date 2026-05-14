@@ -3,7 +3,7 @@ import 'package:transit_planner/src/feed_catalog.dart';
 
 void main() {
   test('country network expands to concrete feeds', () {
-    final japan = findFeedById('jp-all');
+    final japan = findFeedById('jp-public-no-key');
 
     expect(japan, isNotNull);
     expect(japan!.isCollection, isTrue);
@@ -15,6 +15,13 @@ void main() {
         'kanazawa-flatbus',
         'kanazawa-hakusan-meguru',
         'kanazawa-tsubata-bus',
+        'kobe-shiokaze',
+        'kobe-satoyama',
+        'himeji-ieshima',
+        'takarazuka-runrunbus',
+        'nishinomiya-sakurayamanami',
+        'yamatokoriyama-kingyobus',
+        'rinkan-koyasan',
       ]),
     );
   });
@@ -28,6 +35,6 @@ void main() {
   test('Hakusan Meguru feed uses current CKAN resource URL', () {
     final meguru = findFeedById('kanazawa-hakusan-meguru')!;
 
-    expect(meguru.sourceUrl, contains('50049b19-fe9f-4c1f-a9ea-9d0a24141644'));
+    expect(meguru.sourceUrl, contains('50049b19-fe9f-4ca1-9ea9-9d0a24141644'));
   });
 }

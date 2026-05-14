@@ -496,7 +496,7 @@ class _GoFfiRouter implements LocalTransitRouter {
       to: toStop,
       departure: dep,
       arrival: arr,
-      routeName: json['routeId'] as String?,
+      routeName: (json['routeName'] as String?) ?? (json['routeId'] as String?),
       tripId: json['tripId'] as String?,
       routeType: (json['routeType'] as num?)?.toInt(),
     );

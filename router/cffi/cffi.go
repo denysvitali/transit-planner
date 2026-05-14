@@ -113,6 +113,7 @@ type routeEndpoint struct {
 type legPayload struct {
 	Mode      string      `json:"mode"`
 	RouteID   string      `json:"routeId,omitempty"`
+	RouteName string      `json:"routeName,omitempty"`
 	TripID    string      `json:"tripId,omitempty"`
 	RouteType int         `json:"routeType,omitempty"`
 	FromStop  router.Stop `json:"fromStop"`
@@ -214,12 +215,15 @@ func RouteJSON(raw string) string {
 	legs := make([]legPayload, 0, len(itinerary.Legs))
 	for _, leg := range itinerary.Legs {
 		routeType := -1
-		if gtfsRouteType, ok := engine.RouteType(leg.RouteID); ok {
-			routeType = gtfsRouteType
+		routeName := leg.RouteID
+		if route, ok := h.feed.Routes[leg.RouteID]; ok {
+			routeType = route.Type
+			routeName = firstNonEmpty(route.ShortName, route.LongName, route.ID)
 		}
 		legs = append(legs, legPayload{
 			Mode:      leg.Mode,
 			RouteID:   leg.RouteID,
+			RouteName: routeName,
 			TripID:    leg.TripID,
 			RouteType: routeType,
 			FromStop:  leg.FromStop,
@@ -233,6 +237,15 @@ func RouteJSON(raw string) string {
 		Transfers: itinerary.Transfers,
 		Legs:      legs,
 	})
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func allowedRouteTypes(routeTypes []int) map[int]bool {
