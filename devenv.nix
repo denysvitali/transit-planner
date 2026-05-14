@@ -5,6 +5,7 @@
     flutter
     go
     git
+    jdk21
   ];
 
   languages.go.enable = true;
