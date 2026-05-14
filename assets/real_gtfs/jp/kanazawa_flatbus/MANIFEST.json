@@ -1,0 +1,12 @@
+{
+  "feed": "kanazawa-flatbus",
+  "country": "JP",
+  "region": "Ishikawa",
+  "source_url": "https://catalog-data.city.kanazawa.ishikawa.jp/dataset/1196beb4-f9f9-463c-9723-5b38d8127425/resource/9636cac5-1449-4656-893b-ec98d834eb23/download/flatbus20260401.zip",
+  "publisher": "Kanazawa City, Ishikawa",
+  "license": "CC-BY-4.0",
+  "description": "Kanazawa municipal bus network (Flat Bus), via Kanazawa Open Data Catalog",
+  "fetched_at": "2026-05-14T14:49:00Z",
+  "sha256": "b7e8acc0c9eb3d5120794ec8d8a7568c6f89638e7a1fc57bc978be747104fa0a",
+  "bytes": 30087
+}

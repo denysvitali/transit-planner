@@ -105,9 +105,18 @@ class _HomePageState extends State<HomePage> {
     }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_feedSelectionStorageKey, feed.id);
+    // Tear the map down before swapping in the new feed. The Stack/Map
+    // gets replaced by _LoadingState while we re-open the router, which
+    // disposes the underlying maplibre platform view — keeping the old
+    // controller/symbols around would let _refreshMapOverlays() reach a
+    // dead method channel and surface as MissingPluginException.
     setState(() {
       _initializing = true;
       _itineraries = const [];
+      _mapController = null;
+      _styleLoaded = false;
+      _markerSymbols.clear();
+      _routeLines.clear();
     });
     await _openFeed(feed);
   }
@@ -356,15 +365,22 @@ class _HomePageState extends State<HomePage> {
     if (points.isNotEmpty) {
       final bounds = _boundsForPoints(points);
       if (bounds != null) {
-        await controller.animateCamera(
-          CameraUpdate.newLatLngBounds(
-            bounds,
-            left: 48,
-            right: 48,
-            top: 220,
-            bottom: 280,
-          ),
-        );
+        try {
+          await controller.animateCamera(
+            CameraUpdate.newLatLngBounds(
+              bounds,
+              left: 48,
+              right: 48,
+              top: 220,
+              bottom: 280,
+            ),
+          );
+        } catch (error) {
+          // The maplibre platform view can briefly tear down across a feed
+          // swap or hot rebuild; swallow the resulting channel miss instead
+          // of crashing the plan.
+          AppLogBuffer.instance.warning('animateCamera failed: $error');
+        }
       }
     }
   }

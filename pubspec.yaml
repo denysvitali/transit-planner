@@ -72,6 +72,7 @@ flutter:
 
   assets:
     - assets/sample_toei_train/Toei-Train-GTFS.zip
+    - assets/real_gtfs/jp/kanazawa_flatbus/kanazawa-flatbus.zip
 
   # To add assets to your application, add an assets section, like this:
   # assets:
