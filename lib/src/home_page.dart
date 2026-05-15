@@ -5,6 +5,7 @@ import 'package:maplibre_gl/maplibre_gl.dart';
 
 import 'app_log.dart';
 import 'feed_catalog.dart';
+import 'feed_debug_overlay.dart';
 import 'feed_load_progress.dart';
 import 'go_ffi_router.dart';
 import 'local_router.dart';
@@ -544,6 +545,17 @@ class _HomePageState extends State<HomePage> {
                   left: AppSpacing.xs,
                   bottom: AppSpacing.xs,
                   child: _MapAttribution(),
+                ),
+                Positioned(
+                  right: AppSpacing.xs,
+                  top: 148,
+                  child: SafeArea(
+                    bottom: false,
+                    child: LoadedFeedsDebugView(
+                      feed: _activeFeed,
+                      stopCount: _stops.length,
+                    ),
+                  ),
                 ),
                 Positioned(
                   left: 0,
