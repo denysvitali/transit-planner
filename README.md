@@ -35,10 +35,9 @@ Preferred:
 
 ```sh
 devenv shell
-flutter pub get
-flutter analyze --no-fatal-infos --no-fatal-warnings
-flutter test
-go test ./...
+generate-sqlc
+check-go
+check-flutter
 ```
 
 If `devenv` is not installed:
