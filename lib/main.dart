@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'src/app_log.dart';
+import 'src/app_shell.dart';
 import 'src/home_page.dart';
 import 'src/itinerary_detail_page.dart';
 import 'src/models.dart';
@@ -48,22 +49,49 @@ class _TransitPlannerAppState extends State<TransitPlannerApp> {
     super.initState();
     _router = GoRouter(
       routes: [
-        GoRoute(path: '/', builder: (context, state) => const HomePage()),
-        GoRoute(
-          path: '/settings',
-          builder: (context, state) => const SettingsPage(),
-        ),
-        GoRoute(
-          path: '/itinerary',
-          builder: (context, state) {
-            final extra = state.extra;
-            if (extra is Itinerary) {
-              return ItineraryDetailPage(itinerary: extra);
-            }
-            return const Scaffold(
-              body: Center(child: Text('No itinerary data available')),
-            );
-          },
+        StatefulShellRoute.indexedStack(
+          builder: (context, state, navigationShell) =>
+              AppShell(navigationShell: navigationShell),
+          branches: [
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/',
+                  builder: (context, state) => const HomePage(),
+                  routes: [
+                    GoRoute(
+                      path: 'itinerary',
+                      builder: (context, state) {
+                        final extra = state.extra;
+                        if (extra is Itinerary) {
+                          return ItineraryDetailPage(itinerary: extra);
+                        }
+                        return const Scaffold(
+                          body: Center(
+                            child: Text('No itinerary data available'),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/settings',
+                  builder: (context, state) => const SettingsPage(),
+                  routes: [
+                    GoRoute(
+                      path: 'logs',
+                      builder: (context, state) => const LogsPage(),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
         ),
       ],
     );

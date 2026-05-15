@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 
 import 'app_log.dart';
 import 'feed_catalog.dart';
@@ -7,20 +8,6 @@ import 'theme.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
-
-  static const _logLevels = {AppLogLevel.warning, AppLogLevel.error};
-
-  Future<void> _copyLogs(BuildContext context) async {
-    await Clipboard.setData(
-      ClipboardData(text: AppLogBuffer.instance.formatted(_logLevels)),
-    );
-    if (!context.mounted) {
-      return;
-    }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Warning and error logs copied')),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,6 +25,59 @@ class SettingsPage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: AppSpacing.s),
+            ListenableBuilder(
+              listenable: AppLogBuffer.instance,
+              builder: (context, _) {
+                final logCount = AppLogBuffer.instance
+                    .entriesFor(_logLevels)
+                    .length;
+                return ListTile(
+                  leading: const Icon(Icons.article_outlined),
+                  title: const Text('Logs'),
+                  subtitle: Text(
+                    logCount == 0
+                        ? 'No warning or error logs'
+                        : '$logCount warning or error log'
+                              '${logCount == 1 ? '' : 's'}',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  contentPadding: EdgeInsets.zero,
+                  onTap: () => context.push('/settings/logs'),
+                );
+              },
+            ),
+            const SizedBox(height: AppSpacing.l),
+            const _AboutSection(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class LogsPage extends StatelessWidget {
+  const LogsPage({super.key});
+
+  Future<void> _copyLogs(BuildContext context) async {
+    await Clipboard.setData(
+      ClipboardData(text: AppLogBuffer.instance.formatted(_logLevels)),
+    );
+    if (!context.mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Warning and error logs copied')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Logs')),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(AppSpacing.m),
+          children: [
             ListenableBuilder(
               listenable: AppLogBuffer.instance,
               builder: (context, _) {
@@ -77,14 +117,14 @@ class SettingsPage extends StatelessWidget {
                 );
               },
             ),
-            const SizedBox(height: AppSpacing.l),
-            const _AboutSection(),
           ],
         ),
       ),
     );
   }
 }
+
+const _logLevels = {AppLogLevel.warning, AppLogLevel.error};
 
 /// About / attributions section.
 class _AboutSection extends StatelessWidget {

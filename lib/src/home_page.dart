@@ -120,8 +120,8 @@ class _HomePageState extends State<HomePage> {
     setState(() => _feedProgress = progress);
   }
 
-  Future<void> _openSettings() async {
-    await context.push('/settings');
+  void _openSettings() {
+    context.go('/settings');
   }
 
   RoutePoint? _pickInitialOrigin(List<TransitStop> stops) {
@@ -491,7 +491,6 @@ class _HomePageState extends State<HomePage> {
                       onEditOrigin: _editOrigin,
                       onEditDestination: _editDestination,
                       onSwap: _swapEndpoints,
-                      onSettings: () => _openSettings(),
                     ),
                   ),
                 ),
@@ -666,7 +665,6 @@ class _SearchHeader extends StatelessWidget {
     required this.onEditOrigin,
     required this.onEditDestination,
     required this.onSwap,
-    required this.onSettings,
   });
 
   final RoutePoint? origin;
@@ -674,7 +672,6 @@ class _SearchHeader extends StatelessWidget {
   final VoidCallback onEditOrigin;
   final VoidCallback onEditDestination;
   final VoidCallback onSwap;
-  final VoidCallback onSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -723,11 +720,6 @@ class _SearchHeader extends StatelessWidget {
                       point: destination,
                       onTap: onEditDestination,
                     ),
-                  ),
-                  IconButton(
-                    tooltip: 'Settings',
-                    onPressed: onSettings,
-                    icon: const Icon(Icons.settings_outlined),
                   ),
                 ],
               ),
