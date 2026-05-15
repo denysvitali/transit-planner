@@ -75,7 +75,50 @@ func LoadGTFSZip(path string) (*Feed, error) {
 	return loadFeed(&r.Reader)
 }
 
-func loadFeed(fsys fs.FS) (*Feed, error) {
+// findGTFSRoot returns a subtree of fsys rooted at the directory that contains
+// stops.txt. Some agencies publish GTFS zips where every file lives under a
+// single top-level folder (e.g. "agency-name/stops.txt"), so opening
+// "stops.txt" off the zip root fails. We scan once for stops.txt and rebase
+// the FS so the rest of the loader can address files by their bare names.
+func findGTFSRoot(fsys fs.FS) (fs.FS, error) {
+	if _, err := fs.Stat(fsys, "stops.txt"); err == nil {
+		return fsys, nil
+	}
+	var found string
+	walkErr := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if d.Name() == "stops.txt" {
+			found = path
+			return fs.SkipAll
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return nil, walkErr
+	}
+	if found == "" {
+		return nil, fs.ErrNotExist
+	}
+	dir := strings.TrimSuffix(found, "stops.txt")
+	dir = strings.TrimSuffix(dir, "/")
+	if dir == "" || dir == "." {
+		return fsys, nil
+	}
+	return fs.Sub(fsys, dir)
+}
+
+func loadFeed(raw fs.FS) (*Feed, error) {
+	fsys, err := findGTFSRoot(raw)
+	if err != nil {
+		// Preserve the historical error shape so callers (and tests) keep
+		// seeing "open stops.txt: file does not exist" for empty zips.
+		return nil, &fs.PathError{Op: "open", Path: "stops.txt", Err: fs.ErrNotExist}
+	}
 	stops, err := loadStops(fsys)
 	if err != nil {
 		return nil, err
@@ -274,6 +317,11 @@ func readCSV(fsys fs.FS, name string) ([]map[string]string, error) {
 
 	reader := csv.NewReader(file)
 	reader.FieldsPerRecord = -1
+	// Some GTFS-JP feeds (e.g. transitland-f-saga-current-jp) emit bare
+	// double quotes inside otherwise unquoted fields, which trips the strict
+	// RFC 4180 parser. LazyQuotes makes the reader treat those as literal
+	// characters instead of refusing the file outright.
+	reader.LazyQuotes = true
 	header, err := reader.Read()
 	if err != nil {
 		return nil, err
