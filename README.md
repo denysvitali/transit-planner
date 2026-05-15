@@ -149,6 +149,26 @@ Downloads land under `assets/real_gtfs/<country>/<feed>/<feed>.zip` with a
 `MANIFEST.json` recording source URL, timestamp, and SHA-256. The directory
 is gitignored; commit only vendored fixtures under `assets/sample_*`.
 
+### Building a unified GTFS SQLite database
+
+Use `tool/build_gtfs_db` to pour one or more GTFS directories or ZIPs into a
+single SQLite database while preserving feed attribution:
+
+```sh
+go run ./tool/build_gtfs_db -db /tmp/gtfs.sqlite \
+  -feed toei-train=assets/sample_toei_train/Toei-Train-GTFS.zip \
+  -feed sample-bern=assets/sample_gtfs
+```
+
+The database keeps a `feeds` table and `feed_versions` table, stores every
+GTFS `.txt` file in raw `gtfs_files` / `gtfs_rows` tables, and also populates
+feed-scoped query tables for core GTFS entities such as `stops`, `routes`,
+`trips`, `stop_times`, `calendar_dates`, `transfers`, and `shapes`. Every
+imported table carries `feed_id` and `feed_version_id`, with indexes for the
+common feed, trip, stop, and attribution lookups. Re-importing the same feed
+creates a new `feed_versions` row and flips the active pointer; use the
+`active_*` views for app queries that should ignore historical versions.
+
 ### Loading and merging feeds
 
 Load a single feed:

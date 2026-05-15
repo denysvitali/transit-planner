@@ -192,9 +192,15 @@ Stages:
    - Trips sorted by route pattern and departure, for log-time boarding
      lookup.
    - Transfer adjacency in CSR (compressed sparse row) form.
-5. **Persist.** SQLite is the obvious first target because Flutter already has
-   good bindings. A binary mmap-friendly format (think FlatBuffers or a custom
-   layout) is the long-term goal for cold-start latency.
+5. **Persist.** SQLite is the first target because Flutter already has good
+   bindings and because a merged, feed-scoped database gives the app one
+   seamless query surface without losing attribution. `router/gtfsdb` imports
+   GTFS into `feeds`, `feed_versions`, raw `gtfs_files` / `gtfs_rows`, and
+   typed core GTFS tables that all retain `feed_id` and `feed_version_id`.
+   App-facing queries should use the `active_*` views unless they explicitly
+   need historical feed versions.
+   A binary mmap-friendly format (think FlatBuffers or a custom layout) is the
+   long-term goal for cold-start latency.
 6. **Load.** The Go engine takes either a directory of CSVs or, eventually,
    an opened index file. The Dart side never touches either; it only sees the
    resulting itineraries.
