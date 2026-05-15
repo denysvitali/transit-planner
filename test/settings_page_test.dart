@@ -13,30 +13,35 @@ void main() {
     await NetworkSelection.instance.select(findFeedById(kDefaultFeedId)!);
   });
 
-  testWidgets('settings selects network and shows attribution', (tester) async {
+  testWidgets('settings selects Transitland feeds by country and feed', (
+    tester,
+  ) async {
     await tester.pumpWidget(const MaterialApp(home: SettingsPage()));
 
-    expect(
-      find.widgetWithText(ListTile, 'Transitland coverage'),
-      findsOneWidget,
-    );
+    expect(find.text('Transitland feeds'), findsOneWidget);
+    expect(find.widgetWithText(CheckboxListTile, 'Italy (IT)'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(ListTile, 'Transitland coverage'));
+    await tester.tap(find.widgetWithText(CheckboxListTile, 'Italy (IT)'));
     await tester.pump();
 
-    expect(NetworkSelection.instance.feed.id, 'transitland-coverage');
+    expect(NetworkSelection.instance.selectedFeedIds, contains('it-milan-atm'));
+    expect(NetworkSelection.instance.selectedFeedIds, contains('it-rome'));
 
     await tester.scrollUntilVisible(
-      find.widgetWithText(ListTile, 'Rome public transport GTFS'),
+      find.widgetWithText(CheckboxListTile, 'Rome public transport GTFS'),
       500,
       maxScrolls: 50,
     );
     await tester.tap(
-      find.widgetWithText(ListTile, 'Rome public transport GTFS'),
+      find.widgetWithText(CheckboxListTile, 'Rome public transport GTFS'),
     );
     await tester.pump();
 
-    expect(NetworkSelection.instance.feed.id, 'it-rome');
+    expect(NetworkSelection.instance.selectedFeedIds, contains('it-milan-atm'));
+    expect(
+      NetworkSelection.instance.selectedFeedIds,
+      isNot(contains('it-rome')),
+    );
   });
 
   testWidgets('logs open as a settings sub-view and back returns to settings', (

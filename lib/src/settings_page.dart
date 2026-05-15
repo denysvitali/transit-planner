@@ -138,42 +138,64 @@ class _NetworkSection extends StatelessWidget {
     return ListenableBuilder(
       listenable: NetworkSelection.instance,
       builder: (context, _) {
-        final activeFeed = NetworkSelection.instance.feed;
+        final selectedFeedIds = NetworkSelection.instance.selectedFeedIds;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Network',
+              'Transitland feeds',
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.w800,
               ),
             ),
             const SizedBox(height: AppSpacing.s),
             for (final country in _groupedSelectableFeeds().entries) ...[
-              Padding(
-                padding: const EdgeInsets.only(top: AppSpacing.s),
-                child: Text(
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                tristate: true,
+                value: _selectionValue(
+                  _feedIdsForCountry(country.value),
+                  selectedFeedIds,
+                ),
+                title: Text(
                   _countryLabel(country.key),
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
                 ),
+                onChanged: (value) =>
+                    NetworkSelection.instance.setFeedsSelected(
+                      _feedIdsForCountry(country.value),
+                      value ?? true,
+                    ),
               ),
               for (final region in country.value.entries) ...[
-                Padding(
-                  padding: const EdgeInsets.only(top: AppSpacing.xs),
-                  child: Text(
+                CheckboxListTile(
+                  contentPadding: const EdgeInsets.only(left: AppSpacing.m),
+                  tristate: true,
+                  dense: true,
+                  value: _selectionValue(
+                    region.value.map((feed) => feed.id),
+                    selectedFeedIds,
+                  ),
+                  title: Text(
                     region.key,
                     style: theme.textTheme.labelLarge?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
+                  onChanged: (value) =>
+                      NetworkSelection.instance.setFeedsSelected(
+                        region.value.map((feed) => feed.id),
+                        value ?? true,
+                      ),
                 ),
                 for (final feed in region.value)
-                  _NetworkOption(
+                  _FeedOption(
                     feed: feed,
-                    selected: feed.id == activeFeed.id,
-                    onTap: () => NetworkSelection.instance.select(feed),
+                    selected: selectedFeedIds.contains(feed.id),
+                    onChanged: (selected) => NetworkSelection.instance
+                        .setFeedSelected(feed.id, selected),
                   ),
               ],
             ],
@@ -184,39 +206,35 @@ class _NetworkSection extends StatelessWidget {
   }
 }
 
-class _NetworkOption extends StatelessWidget {
-  const _NetworkOption({
+class _FeedOption extends StatelessWidget {
+  const _FeedOption({
     required this.feed,
     required this.selected,
-    required this.onTap,
+    required this.onChanged,
   });
 
   final TransitFeed feed;
   final bool selected;
-  final VoidCallback onTap;
+  final ValueChanged<bool> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(
-        selected ? Icons.radio_button_checked : Icons.radio_button_off,
-        color: selected ? theme.colorScheme.primary : null,
-      ),
+    return CheckboxListTile(
+      contentPadding: const EdgeInsets.only(left: AppSpacing.xl),
+      value: selected,
       title: Text(feed.name),
-      subtitle: Text(_networkSubtitle(feed)),
-      trailing: feed.id == 'transitland-coverage'
-          ? const Icon(Icons.public)
-          : null,
-      onTap: onTap,
+      subtitle: Text(feed.description),
+      secondary: const Icon(Icons.public),
+      onChanged: (value) => onChanged(value ?? false),
     );
   }
 }
 
 Map<String, Map<String, List<TransitFeed>>> _groupedSelectableFeeds() {
   final grouped = <String, Map<String, List<TransitFeed>>>{};
-  for (final feed in selectableTransitFeeds()) {
+  for (final feed in selectableTransitFeeds().where(
+    (feed) => !feed.isCollection,
+  )) {
     final country = feed.country.isEmpty ? 'Other' : feed.country;
     final region = feed.region.isEmpty ? 'Other' : feed.region;
     grouped.putIfAbsent(country, () => <String, List<TransitFeed>>{});
@@ -240,6 +258,17 @@ Map<String, Map<String, List<TransitFeed>>> _groupedSelectableFeeds() {
   };
 }
 
+Iterable<String> _feedIdsForCountry(Map<String, List<TransitFeed>> regions) =>
+    regions.values.expand((feeds) => feeds).map((feed) => feed.id);
+
+bool? _selectionValue(Iterable<String> feedIds, Set<String> selectedFeedIds) {
+  final ids = feedIds.toList(growable: false);
+  final selectedCount = ids.where(selectedFeedIds.contains).length;
+  if (selectedCount == 0) return false;
+  if (selectedCount == ids.length) return true;
+  return null;
+}
+
 int _compareRegionLabels(String a, String b) {
   const priority = {'Coverage': 0, 'Country': 1, 'Nationwide': 2};
   final aPriority = priority[a] ?? 10;
@@ -256,14 +285,6 @@ String _countryLabel(String country) {
     'Global' => 'Global',
     _ => country,
   };
-}
-
-String _networkSubtitle(TransitFeed feed) {
-  final componentCount = componentFeedsFor(feed).length;
-  if (!feed.isCollection) {
-    return feed.description;
-  }
-  return '$componentCount GTFS feeds · ${feed.description}';
 }
 
 /// About / attributions section.

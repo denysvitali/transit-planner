@@ -4,31 +4,126 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'feed_catalog.dart';
 
 class NetworkSelection extends ChangeNotifier {
-  NetworkSelection._()
-    : _feed = findFeedById(kDefaultFeedId) ?? kTransitFeeds.first;
+  NetworkSelection._() : _selectedFeedIds = {kDefaultFeedId};
 
   static final NetworkSelection instance = NetworkSelection._();
-  static const String _prefsKey = 'selected_network_feed_id';
+  static const String _prefsKey = 'selected_transitland_feed_ids';
+  static const String _legacyPrefsKey = 'selected_network_feed_id';
 
-  TransitFeed _feed;
+  Set<String> _selectedFeedIds;
 
-  TransitFeed get feed => _feed;
+  Set<String> get selectedFeedIds => Set.unmodifiable(_selectedFeedIds);
+
+  TransitFeed get feed {
+    final feeds = _selectedFeeds;
+    if (feeds.length == 1) {
+      return feeds.single;
+    }
+    int? hour;
+    for (final feed in feeds) {
+      hour ??= feed.defaultDepartureHour;
+    }
+    final lat =
+        feeds.fold<double>(0, (sum, feed) => sum + feed.centerLatitude) /
+        feeds.length;
+    final lon =
+        feeds.fold<double>(0, (sum, feed) => sum + feed.centerLongitude) /
+        feeds.length;
+    return TransitFeed(
+      id: 'selected-transitland-feeds',
+      name: 'Selected Transitland feeds',
+      description: 'Merged local network from selected Transitland feeds.',
+      country: 'Global',
+      region: 'Selected',
+      publisher: 'Transitland and source transit-data publishers',
+      license: 'Mixed source licences',
+      sourceUrl: 'https://transit.land/api/v2/rest/feeds',
+      localFileName: '',
+      attribution:
+          'Transit data selected from Transitland-listed feeds; licences vary '
+          'by publisher.',
+      centerLatitude: lat,
+      centerLongitude: lon,
+      defaultDepartureHour: hour,
+      componentFeedIds: feeds.map((feed) => feed.id).toList(growable: false),
+    );
+  }
+
+  List<TransitFeed> get _selectedFeeds {
+    final feeds = _selectedFeedIds
+        .map(findFeedById)
+        .whereType<TransitFeed>()
+        .where((feed) => !feed.isCollection)
+        .toList(growable: false);
+    if (feeds.isNotEmpty) return feeds;
+    return [findFeedById(kDefaultFeedId) ?? kTransitFeeds.first];
+  }
 
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
-    final feedId = prefs.getString(_prefsKey);
-    final feed = feedId == null ? null : findFeedById(feedId);
-    if (feed != null && feed.id != _feed.id) {
-      _feed = feed;
-      notifyListeners();
+    final feedIds = prefs.getStringList(_prefsKey);
+    if (feedIds != null && feedIds.isNotEmpty) {
+      _setSelectedFeedIds(feedIds, persist: false);
+      return;
+    }
+
+    final legacyFeedId = prefs.getString(_legacyPrefsKey);
+    final legacyFeed = legacyFeedId == null ? null : findFeedById(legacyFeedId);
+    if (legacyFeed != null) {
+      _setSelectedFeedIds(
+        componentFeedsFor(legacyFeed).map((feed) => feed.id),
+        persist: false,
+      );
     }
   }
 
   Future<void> select(TransitFeed feed) async {
-    if (feed.id == _feed.id) return;
-    _feed = feed;
+    await setSelectedFeedIds(componentFeedsFor(feed).map((feed) => feed.id));
+  }
+
+  Future<void> setFeedSelected(String feedId, bool selected) async {
+    final ids = {..._selectedFeedIds};
+    if (selected) {
+      ids.add(feedId);
+    } else {
+      ids.remove(feedId);
+    }
+    await setSelectedFeedIds(ids);
+  }
+
+  Future<void> setFeedsSelected(Iterable<String> feedIds, bool selected) async {
+    final ids = {..._selectedFeedIds};
+    if (selected) {
+      ids.addAll(feedIds);
+    } else {
+      ids.removeAll(feedIds);
+    }
+    await setSelectedFeedIds(ids);
+  }
+
+  Future<void> setSelectedFeedIds(Iterable<String> feedIds) async {
+    await _setSelectedFeedIds(feedIds, persist: true);
+  }
+
+  Future<void> _setSelectedFeedIds(
+    Iterable<String> feedIds, {
+    required bool persist,
+  }) async {
+    final validIds = feedIds
+        .map(findFeedById)
+        .whereType<TransitFeed>()
+        .where((feed) => !feed.isCollection)
+        .map((feed) => feed.id)
+        .toSet();
+    if (validIds.isEmpty) {
+      validIds.add(kDefaultFeedId);
+    }
+    if (setEquals(validIds, _selectedFeedIds)) return;
+    _selectedFeedIds = validIds;
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_prefsKey, feed.id);
+    if (persist) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_prefsKey, validIds.toList()..sort());
+    }
   }
 }

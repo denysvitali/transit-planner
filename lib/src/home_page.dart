@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show setEquals;
 import 'package:go_router/go_router.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 
@@ -31,6 +32,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   LocalTransitRouter? _router;
   TransitFeed _activeFeed = NetworkSelection.instance.feed;
+  Set<String> _activeFeedIds = NetworkSelection.instance.selectedFeedIds;
   List<TransitStop> _stops = const [];
   RoutePoint? _origin;
   RoutePoint? _destination;
@@ -79,7 +81,8 @@ class _HomePageState extends State<HomePage> {
 
   void _handleNetworkSelectionChanged() {
     final feed = NetworkSelection.instance.feed;
-    if (feed.id == _activeFeed.id) return;
+    final feedIds = NetworkSelection.instance.selectedFeedIds;
+    if (setEquals(feedIds, _activeFeedIds)) return;
     _openFeed(feed);
   }
 
@@ -88,6 +91,7 @@ class _HomePageState extends State<HomePage> {
     if (mounted) {
       setState(() {
         _activeFeed = feed;
+        _activeFeedIds = NetworkSelection.instance.selectedFeedIds;
         _initializing = true;
         _loadError = null;
         _feedProgress = null;
