@@ -12,6 +12,7 @@
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
 import 'package:ffi/ffi.dart';
@@ -41,6 +42,7 @@ Future<LocalTransitRouter> openFeedRouter(
       'Go FFI router is not supported on ${Platform.operatingSystem}',
     );
   }
+  int? handle;
   try {
     onProgress?.call(
       FeedLoadProgress(
@@ -59,8 +61,8 @@ Future<LocalTransitRouter> openFeedRouter(
         componentCount: stagedFeeds.length,
       ),
     );
-    final native = _NativeBindings.instance;
-    final handle = native.open(stagedFeeds);
+    final openedHandle = await Isolate.run(() => _openNativeFeed(stagedFeeds));
+    handle = openedHandle;
     onProgress?.call(
       FeedLoadProgress(
         feed: feed,
@@ -69,9 +71,13 @@ Future<LocalTransitRouter> openFeedRouter(
         componentCount: stagedFeeds.length,
       ),
     );
-    final stops = native.stops(handle);
-    return _GoFfiRouter._(native: native, handle: handle, stops: stops);
+    final stops = await Isolate.run(() => _loadNativeStops(openedHandle));
+    return _GoFfiRouter._(handle: openedHandle, stops: stops);
   } catch (error, stack) {
+    final failedHandle = handle;
+    if (failedHandle != null) {
+      await Isolate.run(() => _closeNativeFeed(failedHandle));
+    }
     AppLogBuffer.instance.error(
       error,
       stackTrace: stack,
@@ -150,8 +156,8 @@ Future<String> _stageFeed(
   report(FeedLoadOperation.checkingCache);
   final supportDir = await getApplicationSupportDirectory();
   final feedDir = Directory('${supportDir.path}/$_kFeedCacheDir/${feed.id}');
-  if (!feedDir.existsSync()) {
-    feedDir.createSync(recursive: true);
+  if (!await feedDir.exists()) {
+    await feedDir.create(recursive: true);
   }
   final dst = File('${feedDir.path}/${feed.localFileName}');
   final stamp = File('${dst.path}.sha256');
@@ -160,10 +166,10 @@ Future<String> _stageFeed(
   final expectedStamp = isBundled
       ? await _bundledFeedStamp(feed)
       : _cacheStamp(feed);
-  final existingStamp = stamp.existsSync()
-      ? stamp.readAsStringSync().trim()
+  final existingStamp = await stamp.exists()
+      ? (await stamp.readAsString()).trim()
       : '';
-  final hasFreshCache = dst.existsSync() && existingStamp == expectedStamp;
+  final hasFreshCache = await dst.exists() && existingStamp == expectedStamp;
   if (hasFreshCache) {
     return dst.path;
   }
@@ -196,14 +202,14 @@ Future<void> _cacheBundledFeed(
     assetData.offsetInBytes,
     assetData.lengthInBytes,
   );
-  final expected = sha256.convert(bytes).toString();
+  final expected = await Isolate.run(() => sha256.convert(bytes).toString());
   onProgress(
     FeedLoadOperation.copyingBundledFeed,
     bytesReceived: bytes.length,
     totalBytes: bytes.length,
   );
-  dst.writeAsBytesSync(bytes, flush: true);
-  stamp.writeAsStringSync(_cacheStampWithHash(feed, expected));
+  await dst.writeAsBytes(bytes, flush: true);
+  await stamp.writeAsString(_cacheStampWithHash(feed, expected));
 }
 
 Future<String> _bundledFeedStamp(TransitFeed feed) async {
@@ -216,7 +222,7 @@ Future<String> _bundledFeedStamp(TransitFeed feed) async {
     assetData.offsetInBytes,
     assetData.lengthInBytes,
   );
-  final expected = sha256.convert(bytes).toString();
+  final expected = await Isolate.run(() => sha256.convert(bytes).toString());
   return _cacheStampWithHash(feed, expected);
 }
 
@@ -274,13 +280,13 @@ Future<void> _downloadFeed(
       await sink.close();
     } catch (_) {
       await sink.close();
-      if (tmp.existsSync()) {
-        tmp.deleteSync();
+      if (await tmp.exists()) {
+        await tmp.delete();
       }
       rethrow;
     }
     await tmp.rename(dst.path);
-    stamp.writeAsStringSync(_cacheStamp(feed));
+    await stamp.writeAsString(_cacheStamp(feed));
   } finally {
     client.close();
   }
@@ -301,6 +307,22 @@ class _StagedFeed {
 
   final String path;
   final String? prefix;
+}
+
+int _openNativeFeed(List<_StagedFeed> stagedFeeds) =>
+    _NativeBindings.instance.open(stagedFeeds);
+
+List<TransitStop> _loadNativeStops(int handle) =>
+    _NativeBindings.instance.stops(handle);
+
+void _closeNativeFeed(int handle) => _NativeBindings.instance.close(handle);
+
+Map<String, dynamic> _routeNative(Map<String, dynamic> request) {
+  try {
+    return {'response': _NativeBindings.instance.route(request)};
+  } on FfiRouterException catch (error) {
+    return {'error': error.message};
+  }
 }
 
 /// Thin wrapper that owns the symbols looked up from the Go-built shared
@@ -439,16 +461,11 @@ class FfiRouterException implements Exception {
 }
 
 class _GoFfiRouter implements LocalTransitRouter {
-  _GoFfiRouter._({
-    required _NativeBindings native,
-    required int handle,
-    required List<TransitStop> stops,
-  }) : _native = native,
-       _handle = handle,
-       _stops = stops,
-       _stopsById = {for (final s in stops) s.id: s};
+  _GoFfiRouter._({required int handle, required List<TransitStop> stops})
+    : _handle = handle,
+      _stops = stops,
+      _stopsById = {for (final s in stops) s.id: s};
 
-  final _NativeBindings _native;
   final int _handle;
   final List<TransitStop> _stops;
   final Map<String, TransitStop> _stopsById;
@@ -462,24 +479,26 @@ class _GoFfiRouter implements LocalTransitRouter {
         request.departure.hour * 3600 +
         request.departure.minute * 60 +
         request.departure.second;
-    final Map<String, dynamic> response;
-    try {
-      response = _native.route({
-        'handle': _handle,
-        'from': request.origin.id,
-        'to': request.destination.id,
-        ..._endpointPayload('from', request.originPoint),
-        ..._endpointPayload('to', request.destinationPoint),
-        'departure': secondsFromMidnight,
-        'maxTransfers': request.maxTransfers,
-        'routeTypes': _routeTypesForModes(request.modes),
-      });
-    } on FfiRouterException catch (error) {
-      if (error.isDestinationUnreachable) {
+    final nativeRequest = {
+      'handle': _handle,
+      'from': request.origin.id,
+      'to': request.destination.id,
+      ..._endpointPayload('from', request.originPoint),
+      ..._endpointPayload('to', request.destinationPoint),
+      'departure': secondsFromMidnight,
+      'maxTransfers': request.maxTransfers,
+      'routeTypes': _routeTypesForModes(request.modes),
+    };
+    final routeResponse = await Isolate.run(() => _routeNative(nativeRequest));
+    final error = routeResponse['error'];
+    if (error is String && error.isNotEmpty) {
+      final exception = FfiRouterException(error);
+      if (exception.isDestinationUnreachable) {
         return const [];
       }
-      rethrow;
+      throw exception;
     }
+    final response = routeResponse['response'] as Map<String, dynamic>;
     final legsJson = (response['legs'] as List<dynamic>?) ?? const [];
     if (legsJson.isEmpty) {
       return const [];

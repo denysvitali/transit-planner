@@ -65,6 +65,7 @@ class _HomePageState extends State<HomePage> {
   final List<Line> _routeLines = [];
   final List<Circle> _stopCircles = [];
   int _feedOpenSeq = 0;
+  int _planSeq = 0;
 
   @override
   void initState() {
@@ -92,6 +93,7 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _openFeed(TransitFeed feed) async {
     final seq = ++_feedOpenSeq;
+    _planSeq++;
     if (mounted) {
       setState(() {
         _activeFeed = feed;
@@ -285,8 +287,10 @@ class _HomePageState extends State<HomePage> {
       );
       return;
     }
+    final seq = ++_planSeq;
+    final modes = Set<TransitMode>.of(_modes);
     setState(() => _loading = true);
-    if (_modes.isEmpty) {
+    if (modes.isEmpty) {
       AppLogBuffer.instance.warning(
         'Route planning requested with no transit modes selected.',
       );
@@ -295,15 +299,15 @@ class _HomePageState extends State<HomePage> {
       origin: originStop,
       destination: destinationStop,
       departure: _earliestDepartureForFeed(),
-      modes: _modes,
+      modes: modes,
       maxTransfers: _maxTransfers,
       originPoint: origin,
       destinationPoint: destination,
     );
     try {
       final itineraries = await router.route(request);
-      final filtered = _filterByModes(itineraries);
-      if (!mounted) return;
+      final filtered = _filterByModes(itineraries, modes);
+      if (!mounted || seq != _planSeq) return;
       setState(() {
         _itineraries = filtered;
         _selectedItineraryIndex = 0;
@@ -311,12 +315,12 @@ class _HomePageState extends State<HomePage> {
       });
       await _refreshMapOverlays();
     } catch (error, stackTrace) {
+      if (!mounted || seq != _planSeq) return;
       AppLogBuffer.instance.error(
         error,
         stackTrace: stackTrace,
         context: 'Route planning failed',
       );
-      if (!mounted) return;
       setState(() {
         _itineraries = const [];
         _selectedItineraryIndex = 0;
@@ -397,13 +401,16 @@ class _HomePageState extends State<HomePage> {
     ).showSnackBar(const SnackBar(content: Text('Trip details copied')));
   }
 
-  List<Itinerary> _filterByModes(List<Itinerary> itineraries) {
+  List<Itinerary> _filterByModes(
+    List<Itinerary> itineraries,
+    Set<TransitMode> modes,
+  ) {
     return itineraries
         .where((itinerary) {
-          if (_modes.isEmpty) return false;
+          if (modes.isEmpty) return false;
           for (final leg in itinerary.legs) {
             if (leg.mode == TransitMode.walk) continue;
-            if (!_modes.contains(leg.mode)) {
+            if (!modes.contains(leg.mode)) {
               return false;
             }
           }
@@ -1094,6 +1101,13 @@ class _ResultsSheet extends StatelessWidget {
                   ],
                 ),
               ),
+              if (loading) ...[
+                const SizedBox(height: AppSpacing.s),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: AppSpacing.m),
+                  child: LinearProgressIndicator(),
+                ),
+              ],
               ExpansionTile(
                 tilePadding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.m,
