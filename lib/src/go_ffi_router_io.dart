@@ -6,9 +6,9 @@
 // import barrel in go_ffi_router.dart):
 //   - bool   goFfiSupported  — true when the current platform can load the
 //                              native library.
-//   - Future<LocalTransitRouter> openToeiRouter() — stages the selected feed on
-//     disk, opens it through the FFI, and returns a router whose `route` /
-//     `stops` calls go through the Go engine.
+//   - Future<LocalTransitRouter> openToeiRouter() — legacy helper that opens
+//     the app's default feed through the FFI and returns a router whose
+//     `route` / `stops` calls go through the Go engine.
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';

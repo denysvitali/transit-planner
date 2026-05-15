@@ -2,6 +2,25 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:transit_planner/src/feed_catalog.dart';
 
 void main() {
+  test('default app network is the Transitland coverage network', () {
+    final transitland = findFeedById(kDefaultFeedId);
+
+    expect(transitland, isNotNull);
+    expect(transitland!.id, 'transitland-coverage');
+    expect(transitland.isCollection, isTrue);
+    expect(
+      componentFeedsFor(transitland).map((feed) => feed.id),
+      containsAll([
+        'ch-aggregate-2026',
+        'it-rome',
+        'it-milan-atm',
+        'toei-train',
+        'toei-bus',
+        'kanazawa-flatbus',
+      ]),
+    );
+  });
+
   test('country network expands to concrete feeds', () {
     final japan = findFeedById('jp-public-no-key');
     final switzerland = findFeedById('ch-national');

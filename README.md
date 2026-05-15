@@ -78,9 +78,10 @@ The script needs `rsvg-convert` (Debian/Ubuntu: `librsvg2-bin`) and Pillow
 
 ## Transit data
 
-The router is wired against **real, no-API-key GTFS feeds** organised by ISO
-3166-1 alpha-2 country code so multi-operator queries can be planned by
-fetching every known feed for a country and merging them at load time.
+The app no longer asks users to pick a feed. It opens one default
+`transitland-coverage` network whose component feeds cover the currently
+tracked Japan, Switzerland, and Italy sources. Transitland discovery runs in
+tooling/CI; the API key is never embedded in the Flutter app.
 
 Sources are open and license-tagged:
 
@@ -116,15 +117,15 @@ Currently catalogued (no API key required):
 | JP | Wakayama | `rinkan-koyasan` |
 | JP | Ishikawa | `kanazawa-flatbus`, `kanazawa-hakusan-meguru`, `kanazawa-tsubata-bus` |
 
-The curated app catalog stays small enough for review and UI selection. For a
-fuller no-key country build, use Mobility Database discovery:
+For fuller country builds, use Transitland discovery where the API key is
+available. Mobility Database remains available as a no-key fallback and
+cross-checking source:
 
 ```sh
-go run ./tool/fetch_gtfs -list -country JP -complete
-go run ./tool/fetch_gtfs -country JP -complete
-go run ./tool/fetch_gtfs -country IT -complete
-go run ./tool/fetch_gtfs -country CH -complete
 TRANSITLAND_API_KEY=... go run ./tool/fetch_gtfs -country JP -complete -complete-source transitland
+TRANSITLAND_API_KEY=... go run ./tool/fetch_gtfs -country IT -complete -complete-source transitland
+TRANSITLAND_API_KEY=... go run ./tool/fetch_gtfs -country CH -complete -complete-source transitland
+go run ./tool/fetch_gtfs -country JP -complete
 ```
 
 Japan still has important rail gaps: major private rail (JR, Tokyo Metro,

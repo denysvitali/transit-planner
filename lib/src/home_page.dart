@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_log.dart';
 import 'feed_catalog.dart';
@@ -16,8 +15,6 @@ import 'theme.dart';
 // labels, transit lines, etc. No API key, no usage limits. CC-BY OSM data.
 // https://openfreemap.org/
 const _fallbackStyle = 'https://tiles.openfreemap.org/styles/liberty';
-
-const _feedSelectionStorageKey = 'selected_feed_id';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key, this.router});
@@ -66,18 +63,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _bootstrap() async {
-    final feed = await _resolveActiveFeed();
-    await _openFeed(feed);
-  }
-
-  Future<TransitFeed> _resolveActiveFeed() async {
-    if (widget.router != null) {
-      return _activeFeed;
-    }
-    final prefs = await SharedPreferences.getInstance();
-    final stored = prefs.getString(_feedSelectionStorageKey);
-    return findFeedById(stored ?? kDefaultFeedId) ??
-        findFeedById(kDefaultFeedId)!;
+    await _openFeed(findFeedById(kDefaultFeedId)!);
   }
 
   Future<void> _openFeed(TransitFeed feed) async {
@@ -136,14 +122,6 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _openSettings() async {
     await context.push('/settings');
-    if (!mounted || widget.router != null) {
-      return;
-    }
-    final feed = await _resolveActiveFeed();
-    if (!mounted || feed.id == _activeFeed.id) {
-      return;
-    }
-    await _openFeed(feed);
   }
 
   RoutePoint? _pickInitialOrigin(List<TransitStop> stops) {

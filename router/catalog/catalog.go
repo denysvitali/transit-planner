@@ -218,7 +218,19 @@ var italyPublicFeedIDs = append(append([]string{
 	"it-lombardy-trenord",
 }, tuscanyPublicFeedIDs...), trentinoPublicFeedIDs...)
 
+var transitlandCoverageFeedIDs = append(append([]string{
+	"ch-aggregate-2026",
+}, italyPublicFeedIDs...), japanPublicFeedIDs...)
+
 var Networks = []NetworkSpec{
+	{
+		ID: "transitland-coverage", Name: "Transitland coverage",
+		Description: "Single app network for Transitland-sourced coverage across Japan, Switzerland, and Italy. Feed discovery runs in tooling/CI so the app never stores a Transitland API key.",
+		Publisher:   "Transitland and source transit-data publishers", License: "Mixed source licences", SourceURL: "https://transit.land/api/v2/rest/feeds",
+		Attribution:    "Transit data discovered through Transitland; licences vary by publisher, so show each component feed attribution where relevant.",
+		CenterLatitude: 42.5, CenterLongitude: 12.5,
+		ComponentFeedIDs: transitlandCoverageFeedIDs,
+	},
 	{
 		ID: "ch-national", Name: "Switzerland - national GTFS",
 		Description: "Official nationwide Swiss static GTFS timetable, suitable as the canonical country source after preprocessing.",

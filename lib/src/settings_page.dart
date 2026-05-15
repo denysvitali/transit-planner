@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_log.dart';
 import 'feed_catalog.dart';
@@ -79,111 +78,7 @@ class SettingsPage extends StatelessWidget {
               },
             ),
             const SizedBox(height: AppSpacing.l),
-            const _FeedSection(),
-            const SizedBox(height: AppSpacing.l),
             const _AboutSection(),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _FeedSection extends StatefulWidget {
-  const _FeedSection();
-
-  @override
-  State<_FeedSection> createState() => _FeedSectionState();
-}
-
-class _FeedSectionState extends State<_FeedSection> {
-  static const _feedSelectionStorageKey = 'selected_feed_id';
-
-  String? _selectedFeedId;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSelectedFeed();
-  }
-
-  Future<void> _loadSelectedFeed() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
-    setState(() => _selectedFeedId = prefs.getString(_feedSelectionStorageKey));
-  }
-
-  Future<void> _setActiveFeed(String feedId) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_feedSelectionStorageKey, feedId);
-    if (!mounted) return;
-    setState(() => _selectedFeedId = feedId);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final selected = findFeedById(_selectedFeedId ?? kDefaultFeedId);
-    final primaryColor = Theme.of(context).colorScheme.primary;
-    final mutedColor = Theme.of(context).textTheme.bodySmall?.color;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.m),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Transit networks',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: AppSpacing.s),
-            for (final feed in kTransitFeeds)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.s),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    InkWell(
-                      onTap: () async => _setActiveFeed(feed.id),
-                      child: Row(
-                        children: [
-                          Icon(
-                            feed.id == selected?.id
-                                ? Icons.radio_button_checked
-                                : Icons.radio_button_off,
-                            size: 18,
-                            color: feed.id == selected?.id
-                                ? primaryColor
-                                : mutedColor,
-                          ),
-                          const SizedBox(width: AppSpacing.s),
-                          Expanded(
-                            child: Text(
-                              feed.name,
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      feed.description,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    if (feed.id == selected?.id)
-                      Text(
-                        'Set as default for next launch',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            Text(
-              'Default network for next launch: ${selected?.name ?? kDefaultFeedId}',
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
           ],
         ),
       ),
@@ -198,6 +93,8 @@ class _AboutSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final activeFeed = findFeedById(kDefaultFeedId)!;
+    final attributionFeeds = componentFeedsFor(activeFeed);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -208,12 +105,16 @@ class _AboutSection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.s),
+        Text(activeFeed.name, style: theme.textTheme.titleMedium),
+        const SizedBox(height: AppSpacing.xs),
         Text(
-          'Transit data sources and networks',
-          style: theme.textTheme.titleMedium,
+          activeFeed.description,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
         const SizedBox(height: AppSpacing.xs),
-        ...kTransitFeeds.map(
+        ...attributionFeeds.map(
           (feed) => Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.s),
             child: Column(

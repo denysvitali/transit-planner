@@ -1,8 +1,7 @@
 // Catalog of known GTFS feeds and merged regional networks for the app.
 //
-// Region and country entries expand to the public, no-key GTFS feeds we know
-// how to fetch today. The underlying providers stay visible for licensing and
-// attribution, but users can select a whole transport network.
+// The app uses one Transitland-backed default network. The underlying providers
+// stay visible for licensing and attribution, but users do not choose feeds.
 part 'feed_catalog.g.dart';
 
 class TransitFeed {
@@ -40,7 +39,7 @@ class TransitFeed {
   bool get isCollection => componentFeedIds.isNotEmpty;
 }
 
-const String kDefaultFeedId = 'toei-train';
+const String kDefaultFeedId = 'transitland-coverage';
 
 TransitFeed? findFeedById(String id) {
   for (final feed in kTransitFeeds) {
