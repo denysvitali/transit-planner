@@ -257,34 +257,6 @@ class _HomePageState extends State<HomePage> {
     return null;
   }
 
-  Future<void> _useCurrentLocationAsOrigin() async {
-    final location = await _resolveCurrentLocation();
-    if (!mounted) return;
-    if (location == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Current location is unavailable. Check permission.'),
-        ),
-      );
-      return;
-    }
-    final snapped = nearestStop(_stops, location.latitude, location.longitude);
-    final description = snapped == null
-        ? 'Current GPS position'
-        : 'Nearest stop: ${snapped.name} '
-              '(${formatDistance(haversineMeters(location.latitude, location.longitude, snapped.latitude, snapped.longitude))})';
-    setState(() {
-      _origin = RoutePoint(
-        name: 'My location',
-        description: description,
-        latitude: location.latitude,
-        longitude: location.longitude,
-        snappedStop: snapped,
-      );
-    });
-    await _refreshMapOverlays();
-  }
-
   void _swapEndpoints() {
     setState(() {
       final tmp = _origin;
@@ -704,17 +676,6 @@ class _HomePageState extends State<HomePage> {
                   child: _MapAttribution(),
                 ),
                 Positioned(
-                  right: AppSpacing.xs,
-                  top: 148,
-                  child: SafeArea(
-                    bottom: false,
-                    child: _MapControls(
-                      onUseLocation: _useCurrentLocationAsOrigin,
-                      onOpenDeveloper: () => context.go('/settings/logs'),
-                    ),
-                  ),
-                ),
-                Positioned(
                   left: 0,
                   right: 0,
                   top: 0,
@@ -775,42 +736,6 @@ class _MapAttribution extends StatelessWidget {
             style: TextStyle(fontSize: 10, color: Colors.black87),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _MapControls extends StatelessWidget {
-  const _MapControls({
-    required this.onUseLocation,
-    required this.onOpenDeveloper,
-  });
-
-  final VoidCallback onUseLocation;
-  final VoidCallback onOpenDeveloper;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Material(
-      color: theme.colorScheme.surface,
-      elevation: 3,
-      borderRadius: BorderRadius.circular(AppRadius.s),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            tooltip: 'Use current location',
-            onPressed: onUseLocation,
-            icon: const Icon(Icons.my_location),
-          ),
-          const SizedBox(width: 40, child: Divider(height: 1)),
-          IconButton(
-            tooltip: 'Developer logs',
-            onPressed: onOpenDeveloper,
-            icon: const Icon(Icons.bug_report_outlined),
-          ),
-        ],
       ),
     );
   }
@@ -1169,41 +1094,6 @@ class _ResultsSheet extends StatelessWidget {
                   ],
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.m,
-                  AppSpacing.s,
-                  AppSpacing.m,
-                  AppSpacing.s,
-                ),
-                child: Wrap(
-                  spacing: AppSpacing.s,
-                  runSpacing: AppSpacing.xs,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    ActionChip(
-                      avatar: const Icon(Icons.calendar_today, size: 18),
-                      label: Text(_dateLabel(departure)),
-                      onPressed: onPickDepartureDate,
-                    ),
-                    ActionChip(
-                      avatar: const Icon(Icons.access_time, size: 18),
-                      label: Text(
-                        hasDepartureOverride
-                            ? _clock(departure)
-                            : 'Now ${_clock(departure)}',
-                      ),
-                      onPressed: onPickDepartureTime,
-                    ),
-                    if (hasDepartureOverride)
-                      IconButton(
-                        tooltip: 'Use current time',
-                        icon: const Icon(Icons.close),
-                        onPressed: onClearDepartureTime,
-                      ),
-                  ],
-                ),
-              ),
               ExpansionTile(
                 tilePadding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.m,
@@ -1214,8 +1104,40 @@ class _ResultsSheet extends StatelessWidget {
                   AppSpacing.m,
                   AppSpacing.s,
                 ),
-                title: const Text('Routing options'),
+                title: const Text('Options'),
+                subtitle: Text(_optionsLabel(departure, hasDepartureOverride)),
                 children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Wrap(
+                      spacing: AppSpacing.s,
+                      runSpacing: AppSpacing.xs,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        ActionChip(
+                          avatar: const Icon(Icons.calendar_today, size: 18),
+                          label: Text(_dateLabel(departure)),
+                          onPressed: onPickDepartureDate,
+                        ),
+                        ActionChip(
+                          avatar: const Icon(Icons.access_time, size: 18),
+                          label: Text(
+                            hasDepartureOverride
+                                ? _clock(departure)
+                                : 'Now ${_clock(departure)}',
+                          ),
+                          onPressed: onPickDepartureTime,
+                        ),
+                        if (hasDepartureOverride)
+                          TextButton.icon(
+                            icon: const Icon(Icons.restart_alt),
+                            label: const Text('Use current time'),
+                            onPressed: onClearDepartureTime,
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.s),
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Wrap(
@@ -1371,15 +1293,32 @@ class _ItineraryCard extends StatelessWidget {
                     ),
                   ),
                   Text('${itinerary.duration.inMinutes} min'),
-                  IconButton(
-                    tooltip: 'Copy trip details',
-                    icon: const Icon(Icons.copy_all_outlined),
-                    onPressed: onCopy,
-                  ),
-                  IconButton(
-                    tooltip: 'Open trip details',
-                    icon: const Icon(Icons.open_in_full),
-                    onPressed: onOpenDetails,
+                  PopupMenuButton<VoidCallback>(
+                    tooltip: 'Trip actions',
+                    icon: const Icon(Icons.more_vert),
+                    onSelected: (action) => action(),
+                    itemBuilder: (context) => [
+                      PopupMenuItem<VoidCallback>(
+                        value: onCopy,
+                        child: const Row(
+                          children: [
+                            Icon(Icons.copy_all_outlined),
+                            SizedBox(width: AppSpacing.s),
+                            Text('Copy details'),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem<VoidCallback>(
+                        value: onOpenDetails,
+                        child: const Row(
+                          children: [
+                            Icon(Icons.open_in_full),
+                            SizedBox(width: AppSpacing.s),
+                            Text('Open details'),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -1389,31 +1328,59 @@ class _ItineraryCard extends StatelessWidget {
                 '• ${itinerary.walking.inMinutes} min walk',
                 style: theme.textTheme.bodySmall,
               ),
-              const Divider(height: AppSpacing.l),
-              for (final leg in itinerary.legs)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.s),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(_modeIcon(leg.mode), size: 20),
-                      const SizedBox(width: AppSpacing.s),
-                      Expanded(
-                        child: Text(
-                          '${leg.routeName ?? _modeLabel(leg.mode)} '
-                          '${leg.from.name} -> ${leg.to.name}',
-                        ),
-                      ),
-                      Text('${leg.duration.inMinutes} min'),
-                    ],
+              const SizedBox(height: AppSpacing.xs),
+              Row(
+                children: [
+                  Icon(
+                    _modeIcon(_primaryMode(itinerary)),
+                    size: 18,
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
-                ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(
+                    child: Text(
+                      _itinerarySummary(itinerary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
       ),
     );
   }
+}
+
+TransitMode _primaryMode(Itinerary itinerary) {
+  return itinerary.legs
+      .map((leg) => leg.mode)
+      .firstWhere(
+        (mode) => mode != TransitMode.walk,
+        orElse: () => TransitMode.walk,
+      );
+}
+
+String _itinerarySummary(Itinerary itinerary) {
+  final labels = <String>[];
+  for (final leg in itinerary.legs) {
+    if (leg.mode == TransitMode.walk) continue;
+    final label = leg.routeName?.isNotEmpty == true
+        ? leg.routeName!
+        : _modeLabel(leg.mode);
+    if (labels.isEmpty || labels.last != label) {
+      labels.add(label);
+    }
+  }
+  if (labels.isEmpty) {
+    return '${itinerary.legs.first.from.name} -> ${itinerary.legs.last.to.name}';
+  }
+  final visible = labels.take(3).join(' -> ');
+  if (labels.length <= 3) return visible;
+  return '$visible +${labels.length - 3} more';
 }
 
 IconData _modeIcon(TransitMode mode) {
@@ -1454,6 +1421,13 @@ String _dateLabel(DateTime value) {
   final month = value.month.toString().padLeft(2, '0');
   final day = value.day.toString().padLeft(2, '0');
   return '${value.year}-$month-$day';
+}
+
+String _optionsLabel(DateTime departure, bool hasDepartureOverride) {
+  final time = hasDepartureOverride
+      ? _clock(departure)
+      : 'Now ${_clock(departure)}';
+  return '${_dateLabel(departure)} · $time';
 }
 
 String _progressText(FeedLoadProgress progress) {
