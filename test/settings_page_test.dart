@@ -1,21 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:transit_planner/src/app_shell.dart';
+import 'package:transit_planner/src/feed_catalog.dart';
+import 'package:transit_planner/src/network_selection.dart';
 import 'package:transit_planner/src/settings_page.dart';
 
 void main() {
-  testWidgets('settings shows feeds as read-only attribution', (tester) async {
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    await NetworkSelection.instance.select(findFeedById(kDefaultFeedId)!);
+  });
+
+  testWidgets('settings selects network and shows attribution', (tester) async {
     await tester.pumpWidget(const MaterialApp(home: SettingsPage()));
 
-    expect(find.text('Transitland coverage'), findsOneWidget);
-    expect(find.text('Rome public transport GTFS'), findsOneWidget);
     expect(
-      find.textContaining('does not download this whole coverage list'),
+      find.widgetWithText(ListTile, 'Transitland coverage'),
       findsOneWidget,
     );
-    expect(find.byIcon(Icons.radio_button_checked), findsNothing);
-    expect(find.byIcon(Icons.radio_button_off), findsNothing);
+
+    await tester.tap(find.widgetWithText(ListTile, 'Transitland coverage'));
+    await tester.pump();
+
+    expect(NetworkSelection.instance.feed.id, 'transitland-coverage');
   });
 
   testWidgets('logs open as a settings sub-view and back returns to settings', (
@@ -62,6 +71,7 @@ void main() {
 
     expect(find.widgetWithText(AppBar, 'Settings'), findsOneWidget);
 
+    await tester.scrollUntilVisible(find.widgetWithText(ListTile, 'Logs'), 500);
     await tester.tap(find.widgetWithText(ListTile, 'Logs'));
     await tester.pumpAndSettle();
 

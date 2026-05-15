@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'app_log.dart';
 import 'feed_catalog.dart';
+import 'network_selection.dart';
 import 'theme.dart';
 
 class SettingsPage extends StatelessWidget {
@@ -18,6 +19,8 @@ class SettingsPage extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.all(AppSpacing.m),
           children: [
+            const _NetworkSection(),
+            const SizedBox(height: AppSpacing.l),
             Text(
               'Developer options',
               style: theme.textTheme.titleLarge?.copyWith(
@@ -125,6 +128,77 @@ class LogsPage extends StatelessWidget {
 }
 
 const _logLevels = {AppLogLevel.warning, AppLogLevel.error};
+
+class _NetworkSection extends StatelessWidget {
+  const _NetworkSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ListenableBuilder(
+      listenable: NetworkSelection.instance,
+      builder: (context, _) {
+        final activeFeed = NetworkSelection.instance.feed;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Network',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.s),
+            for (final feed in appNetworkFeeds())
+              _NetworkOption(
+                feed: feed,
+                selected: feed.id == activeFeed.id,
+                onTap: () => NetworkSelection.instance.select(feed),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _NetworkOption extends StatelessWidget {
+  const _NetworkOption({
+    required this.feed,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final TransitFeed feed;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(
+        selected ? Icons.radio_button_checked : Icons.radio_button_off,
+        color: selected ? theme.colorScheme.primary : null,
+      ),
+      title: Text(feed.name),
+      subtitle: Text(_networkSubtitle(feed)),
+      trailing: feed.id == 'transitland-coverage'
+          ? const Icon(Icons.public)
+          : null,
+      onTap: onTap,
+    );
+  }
+}
+
+String _networkSubtitle(TransitFeed feed) {
+  final componentCount = componentFeedsFor(feed).length;
+  if (!feed.isCollection) {
+    return feed.description;
+  }
+  return '$componentCount GTFS feeds · ${feed.description}';
+}
 
 /// About / attributions section.
 class _AboutSection extends StatelessWidget {

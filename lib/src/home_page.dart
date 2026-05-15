@@ -9,6 +9,7 @@ import 'go_ffi_router.dart';
 import 'local_router.dart';
 import 'location_search_page.dart';
 import 'models.dart';
+import 'network_selection.dart';
 import 'theme.dart';
 
 // OpenFreeMap "Liberty" — community-run free vector basemap with streets,
@@ -29,7 +30,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   LocalTransitRouter? _router;
-  TransitFeed _activeFeed = findFeedById(kDefaultFeedId)!;
+  TransitFeed _activeFeed = NetworkSelection.instance.feed;
   List<TransitStop> _stops = const [];
   RoutePoint? _origin;
   RoutePoint? _destination;
@@ -57,18 +58,33 @@ class _HomePageState extends State<HomePage> {
   LocationCoordinate? _lastUserLocation;
   final List<Symbol> _markerSymbols = [];
   final List<Line> _routeLines = [];
+  int _feedOpenSeq = 0;
 
   @override
   void initState() {
     super.initState();
+    NetworkSelection.instance.addListener(_handleNetworkSelectionChanged);
     _bootstrap();
   }
 
+  @override
+  void dispose() {
+    NetworkSelection.instance.removeListener(_handleNetworkSelectionChanged);
+    super.dispose();
+  }
+
   Future<void> _bootstrap() async {
-    await _openFeed(findFeedById(kDefaultFeedId)!);
+    await _openFeed(NetworkSelection.instance.feed);
+  }
+
+  void _handleNetworkSelectionChanged() {
+    final feed = NetworkSelection.instance.feed;
+    if (feed.id == _activeFeed.id) return;
+    _openFeed(feed);
   }
 
   Future<void> _openFeed(TransitFeed feed) async {
+    final seq = ++_feedOpenSeq;
     if (mounted) {
       setState(() {
         _activeFeed = feed;
@@ -85,9 +101,12 @@ class _HomePageState extends State<HomePage> {
     try {
       final router =
           widget.router ??
-          await openFeedRouter(feed, onProgress: _handleFeedProgress);
+          await openFeedRouter(
+            feed,
+            onProgress: (progress) => _handleFeedProgress(seq, progress),
+          );
       final stops = await router.stops();
-      if (!mounted) return;
+      if (!mounted || seq != _feedOpenSeq) return;
       setState(() {
         _activeFeed = feed;
         _router = router;
@@ -103,7 +122,7 @@ class _HomePageState extends State<HomePage> {
       await _refreshMapOverlays();
       await _plan();
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || seq != _feedOpenSeq) return;
       setState(() {
         _router = null;
         _stops = const [];
@@ -117,26 +136,13 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void _handleFeedProgress(FeedLoadProgress progress) {
-    if (!mounted) return;
+  void _handleFeedProgress(int seq, FeedLoadProgress progress) {
+    if (!mounted || seq != _feedOpenSeq) return;
     setState(() => _feedProgress = progress);
   }
 
   void _openSettings() {
     context.go('/settings');
-  }
-
-  Future<void> _chooseFeed() async {
-    final selected = await showModalBottomSheet<TransitFeed>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) =>
-          _NetworkPicker(activeFeed: _activeFeed, feeds: appNetworkFeeds()),
-    );
-    if (selected == null || selected.id == _activeFeed.id) {
-      return;
-    }
-    await _openFeed(selected);
   }
 
   RoutePoint? _pickInitialOrigin(List<TransitStop> stops) {
@@ -455,7 +461,7 @@ class _HomePageState extends State<HomePage> {
               bounds,
               left: 48,
               right: 48,
-              top: 280,
+              top: 220,
               bottom: 280,
             ),
           );
@@ -542,10 +548,8 @@ class _HomePageState extends State<HomePage> {
                   child: SafeArea(
                     bottom: false,
                     child: _SearchHeader(
-                      activeFeed: _activeFeed,
                       origin: _origin,
                       destination: _destination,
-                      onChooseFeed: _chooseFeed,
                       onEditOrigin: _editOrigin,
                       onEditDestination: _editDestination,
                       onSwap: _swapEndpoints,
@@ -718,19 +722,15 @@ class _LoadErrorState extends StatelessWidget {
 
 class _SearchHeader extends StatelessWidget {
   const _SearchHeader({
-    required this.activeFeed,
     required this.origin,
     required this.destination,
-    required this.onChooseFeed,
     required this.onEditOrigin,
     required this.onEditDestination,
     required this.onSwap,
   });
 
-  final TransitFeed activeFeed;
   final RoutePoint? origin;
   final RoutePoint? destination;
-  final VoidCallback onChooseFeed;
   final VoidCallback onEditOrigin;
   final VoidCallback onEditDestination;
   final VoidCallback onSwap;
@@ -753,8 +753,6 @@ class _SearchHeader extends StatelessWidget {
           padding: const EdgeInsets.all(AppSpacing.s),
           child: Column(
             children: [
-              _NetworkField(feed: activeFeed, onTap: onChooseFeed),
-              const Divider(height: 1),
               Row(
                 children: [
                   Expanded(
@@ -791,141 +789,6 @@ class _SearchHeader extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _NetworkField extends StatelessWidget {
-  const _NetworkField({required this.feed, required this.onTap});
-
-  final TransitFeed feed;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final componentCount = componentFeedsFor(feed).length;
-    return InkWell(
-      borderRadius: BorderRadius.circular(AppRadius.s),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.s,
-          vertical: AppSpacing.s,
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.public, color: theme.colorScheme.secondary, size: 20),
-            const SizedBox(width: AppSpacing.s),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Network',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  Text(
-                    feed.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color: theme.colorScheme.onSurface,
-                    ),
-                  ),
-                  Text(
-                    componentCount == 1
-                        ? '1 GTFS feed'
-                        : '$componentCount GTFS feeds',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: AppSpacing.s),
-            const Icon(Icons.expand_more),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _NetworkPicker extends StatelessWidget {
-  const _NetworkPicker({required this.activeFeed, required this.feeds});
-
-  final TransitFeed activeFeed;
-  final List<TransitFeed> feeds;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return SafeArea(
-      child: ListView(
-        shrinkWrap: true,
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.m,
-          0,
-          AppSpacing.m,
-          AppSpacing.m,
-        ),
-        children: [
-          Text(
-            'Network',
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.s),
-          for (final feed in feeds)
-            _NetworkOption(
-              feed: feed,
-              selected: feed.id == activeFeed.id,
-              onTap: () => Navigator.of(context).pop(feed),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _NetworkOption extends StatelessWidget {
-  const _NetworkOption({
-    required this.feed,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final TransitFeed feed;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final componentCount = componentFeedsFor(feed).length;
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(
-        selected ? Icons.radio_button_checked : Icons.radio_button_off,
-        color: selected ? theme.colorScheme.primary : null,
-      ),
-      title: Text(feed.name),
-      subtitle: Text(
-        feed.isCollection
-            ? '$componentCount GTFS feeds · ${feed.description}'
-            : feed.description,
-      ),
-      trailing: feed.id == 'transitland-coverage'
-          ? const Icon(Icons.public)
-          : null,
-      onTap: onTap,
     );
   }
 }

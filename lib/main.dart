@@ -9,11 +9,13 @@ import 'src/app_shell.dart';
 import 'src/home_page.dart';
 import 'src/itinerary_detail_page.dart';
 import 'src/models.dart';
+import 'src/network_selection.dart';
 import 'src/settings_page.dart';
 import 'src/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await NetworkSelection.instance.load();
 
   final previousFlutterErrorHandler = FlutterError.onError;
   FlutterError.onError = (details) {
