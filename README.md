@@ -78,10 +78,12 @@ The script needs `rsvg-convert` (Debian/Ubuntu: `librsvg2-bin`) and Pillow
 
 ## Transit data
 
-The app no longer asks users to pick a feed. It opens one default
-`transitland-coverage` network whose component feeds cover the currently
-tracked Japan, Switzerland, and Italy sources. Transitland discovery runs in
-tooling/CI; the API key is never embedded in the Flutter app.
+The app no longer asks users to pick a feed. It opens the bundled default feed
+on startup so launch never downloads a multi-country catalog. Transitland
+discovery runs in tooling/CI; the API key is never embedded in the Flutter app.
+The `transitland-coverage` catalog entry is metadata for a future prebuilt or
+lazy-loaded coverage bundle, not something the app should eagerly download on
+launch.
 
 Sources are open and license-tagged:
 

@@ -2,12 +2,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:transit_planner/src/feed_catalog.dart';
 
 void main() {
-  test('default app network is the Transitland coverage network', () {
-    final transitland = findFeedById(kDefaultFeedId);
+  test('default app feed does not eagerly download Transitland coverage', () {
+    final defaultFeed = findFeedById(kDefaultFeedId);
+    final transitland = findFeedById('transitland-coverage');
 
+    expect(defaultFeed, isNotNull);
+    expect(defaultFeed!.id, 'toei-train');
+    expect(defaultFeed.isBundled, isTrue);
     expect(transitland, isNotNull);
-    expect(transitland!.id, 'transitland-coverage');
-    expect(transitland.isCollection, isTrue);
+    expect(transitland!.isCollection, isTrue);
     expect(
       componentFeedsFor(transitland).map((feed) => feed.id),
       containsAll([
