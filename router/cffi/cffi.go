@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
-	"sort"
 	"sync"
 	"sync/atomic"
 
@@ -22,6 +21,7 @@ import (
 
 const (
 	maxEndpointCandidates = 8
+	maxEndpointWalkMeters = 2000.0
 	walkMetersPerSecond   = 1.4
 )
 
@@ -272,6 +272,9 @@ func routeWithEndpoints(feed *router.Feed, engine *router.Engine, req routeReque
 	if err != nil {
 		return router.Itinerary{}, err
 	}
+	if len(origins) == 0 || len(destinations) == 0 {
+		return directWalkingItinerary(feed, req)
+	}
 
 	var (
 		best    router.Itinerary
@@ -302,42 +305,71 @@ func routeWithEndpoints(feed *router.Feed, engine *router.Engine, req routeReque
 }
 
 func endpointCandidates(feed *router.Feed, stopID, name string, lat, lon *float64, syntheticID string) ([]routeEndpoint, error) {
+	point, err := endpointPoint(feed, stopID, name, lat, lon, syntheticID)
+	if err != nil {
+		return nil, err
+	}
+	if lat == nil || lon == nil {
+		return []routeEndpoint{{stop: point, point: point}}, nil
+	}
+
+	nearbyStops := feed.NearbyStops(point.Lat, point.Lon, maxEndpointWalkMeters)
+	if len(nearbyStops) > maxEndpointCandidates {
+		nearbyStops = nearbyStops[:maxEndpointCandidates]
+	}
+	candidates := make([]routeEndpoint, 0, len(nearbyStops))
+	for _, nearby := range nearbyStops {
+		candidates = append(candidates, routeEndpoint{
+			stop:        nearby.Stop,
+			point:       point,
+			walkSeconds: int(math.Ceil(nearby.DistanceMeters / walkMetersPerSecond)),
+		})
+	}
+	return candidates, nil
+}
+
+func endpointPoint(feed *router.Feed, stopID, name string, lat, lon *float64, syntheticID string) (router.Stop, error) {
 	if lat == nil || lon == nil {
 		stop, ok := feed.Stops[stopID]
 		if !ok {
-			return nil, errors.New("stop not found")
+			return router.Stop{}, errors.New("stop not found")
 		}
-		return []routeEndpoint{{stop: stop, point: stop}}, nil
+		return stop, nil
 	}
 	pointName := name
 	if pointName == "" {
 		pointName = stopID
 	}
-	point := router.Stop{
+	return router.Stop{
 		ID:   "__" + syntheticID,
 		Name: pointName,
 		Lat:  *lat,
 		Lon:  *lon,
+	}, nil
+}
+
+func directWalkingItinerary(feed *router.Feed, req routeRequest) (router.Itinerary, error) {
+	origin, err := endpointPoint(feed, req.From, req.FromName, req.FromLat, req.FromLon, "origin")
+	if err != nil {
+		return router.Itinerary{}, err
 	}
-	candidates := make([]routeEndpoint, 0, len(feed.Stops))
-	for _, stop := range feed.Stops {
-		distance := router.HaversineMeters(point.Lat, point.Lon, stop.Lat, stop.Lon)
-		candidates = append(candidates, routeEndpoint{
-			stop:        stop,
-			point:       point,
-			walkSeconds: int(math.Ceil(distance / walkMetersPerSecond)),
-		})
+	destination, err := endpointPoint(feed, req.To, req.ToName, req.ToLat, req.ToLon, "destination")
+	if err != nil {
+		return router.Itinerary{}, err
 	}
-	sort.Slice(candidates, func(i, j int) bool {
-		if candidates[i].walkSeconds != candidates[j].walkSeconds {
-			return candidates[i].walkSeconds < candidates[j].walkSeconds
-		}
-		return candidates[i].stop.ID < candidates[j].stop.ID
-	})
-	if len(candidates) > maxEndpointCandidates {
-		candidates = candidates[:maxEndpointCandidates]
-	}
-	return candidates, nil
+	walkSeconds := int(math.Ceil(router.HaversineMeters(origin.Lat, origin.Lon, destination.Lat, destination.Lon) / walkMetersPerSecond))
+	arrival := req.Departure + walkSeconds
+	return router.Itinerary{
+		Arrival:   arrival,
+		Transfers: 0,
+		Legs: []router.Leg{{
+			Mode:      "walk",
+			FromStop:  origin,
+			ToStop:    destination,
+			Departure: req.Departure,
+			Arrival:   arrival,
+		}},
+	}, nil
 }
 
 func withEndpointWalks(itinerary router.Itinerary, origin, destination routeEndpoint, departure int) router.Itinerary {

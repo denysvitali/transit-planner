@@ -157,6 +157,57 @@ T1,08:20:00,08:20:00,D2,2
 	}
 }
 
+func TestRouteJSONWalksWhenCoordinateEndpointsHaveNoNearbyStops(t *testing.T) {
+	dir := writeMiniFeed(t)
+
+	fromLat, fromLon := 20.0, 20.0
+	toLat, toLon := 20.0, 20.01
+	req := routeRequest{
+		FeedDir:      dir,
+		From:         "A",
+		To:           "D",
+		FromName:     "Remote origin",
+		FromLat:      &fromLat,
+		FromLon:      &fromLon,
+		ToName:       "Remote destination",
+		ToLat:        &toLat,
+		ToLon:        &toLon,
+		Departure:    8 * 3600,
+		MaxTransfers: 2,
+	}
+	reqBytes, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	respJSON := RouteJSON(string(reqBytes))
+
+	var maybeErr errorResponse
+	if err := json.Unmarshal([]byte(respJSON), &maybeErr); err == nil && maybeErr.Error != "" {
+		t.Fatalf("routeJSON returned error: %s", maybeErr.Error)
+	}
+	var resp routeResponse
+	if err := json.Unmarshal([]byte(respJSON), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v (raw=%s)", err, respJSON)
+	}
+	if resp.Transfers != 0 {
+		t.Fatalf("transfers = %d, want 0", resp.Transfers)
+	}
+	if len(resp.Legs) != 1 {
+		t.Fatalf("legs = %d, want direct walk only", len(resp.Legs))
+	}
+	leg := resp.Legs[0]
+	if leg.Mode != "walk" || leg.FromStop.ID != "__origin" || leg.ToStop.ID != "__destination" {
+		t.Fatalf("leg = %#v, want synthetic direct walk", leg)
+	}
+	if leg.Arrival <= leg.Departure {
+		t.Fatalf("walk arrival = %d, want after departure %d", leg.Arrival, leg.Departure)
+	}
+	if leg.FromStop.Name != "Remote origin" || leg.ToStop.Name != "Remote destination" {
+		t.Fatalf("walk names = %q -> %q, want remote endpoint names", leg.FromStop.Name, leg.ToStop.Name)
+	}
+}
+
 // TestRouteJSONFeedZipToei wires the JSON surface through the real Toei feed
 // vendored under assets/sample_toei_train/. It only checks that the request
 // is accepted and a JSON response is produced — the underlying router is
