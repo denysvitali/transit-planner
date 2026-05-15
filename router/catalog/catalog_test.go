@@ -1,9 +1,6 @@
 package catalog
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestNetworksReferenceKnownFeeds(t *testing.T) {
 	for _, network := range Networks {
@@ -18,16 +15,13 @@ func TestNetworksReferenceKnownFeeds(t *testing.T) {
 	}
 }
 
-func TestMobilityDatabaseFeedsUseMirroredLatestZip(t *testing.T) {
+func TestDownloadableFeedsUseTransitlandEndpoints(t *testing.T) {
 	for id, feed := range Feeds {
-		if !strings.HasPrefix(id, "jbda-") {
-			continue
+		if feed.LocalFileName == "" {
+			t.Fatalf("%s has empty local file name", id)
 		}
-		if feed.LocalFileName != id+".zip" {
-			t.Fatalf("%s local file name = %q, want %q", id, feed.LocalFileName, id+".zip")
-		}
-		if feed.SourceURL == "" {
-			t.Fatalf("%s has empty source URL", id)
+		if got, want := feed.SourceURL, "https://transit.land/api/v2/rest/feeds/"; len(got) < len(want) || got[:len(want)] != want {
+			t.Fatalf("%s source URL = %q, want Transitland REST endpoint", id, feed.SourceURL)
 		}
 	}
 }

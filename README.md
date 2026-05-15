@@ -81,29 +81,22 @@ The script needs `rsvg-convert` (Debian/Ubuntu: `librsvg2-bin`) and Pillow
 The app opens the bundled default feed on startup so launch never downloads
 extra feeds before the user asks for them. Settings lists Transitland feeds with
 country, region, and feed-level checkboxes; the checked feeds are loaded as one
-merged local GTFS router network. Transitland
-discovery runs in tooling/CI; the API key is never embedded in the Flutter app.
+merged local GTFS router network. App-catalog downloads use Transitland REST
+feed download endpoints only. Pass a Transitland API key at build/run time with
+`--dart-define=TRANSITLAND_API_KEY=...`; the key is sent as an `apikey` header
+and is not stored in feed URLs.
 
-Sources are open and license-tagged:
+Sources are Transitland-backed and license-tagged:
 
-- **[Mobility Database](https://mobilitydatabase.org)** — the canonical
-  global catalog (6000+ GTFS feeds across 99+ countries; their CSV at
-  `https://files.mobilitydatabase.org/feeds_v2.csv` is what we cross-check
-  against). The fetcher can also use this catalog directly with `-complete`
-  to build fuller no-key country bundles for fragmented countries such as
-  Japan and Italy.
 - **[Transitland REST API](https://www.transit.land/documentation/rest-api/feeds)** —
   authenticated feed discovery and latest-version downloads. Use
   `TRANSITLAND_API_KEY` with `-complete-source transitland`; the key is sent in
   the `apikey` header and is not written to manifests.
-- **[ODPT public bucket](https://www.odpt.org)** — `api-public.odpt.org`
-  hosts the Tokyo Metropolitan Bureau of Transportation feeds (CC-BY 4.0).
-- **[opentransportdata.swiss](https://opentransportdata.swiss)** — official
-  nationwide Swiss static GTFS for the current timetable year.
-- **Italian regional and city portals** — official no-key GTFS from Rome,
-  Milan, Lombardy/Trenord, Tuscany, and Trentino.
+- **[Transitland Atlas](https://github.com/transitland/transitland-atlas)** —
+  public source-feed registry used to identify the feed Onestop IDs in the app
+  catalog.
 
-Currently catalogued (no API key required):
+Currently catalogued:
 
 | Country | Region | Feeds |
 |---------|--------|-------|
@@ -113,26 +106,23 @@ Currently catalogued (no API key required):
 | IT | Tuscany | `it-tuscany-autolinee`, `it-tuscany-trenitalia`, `it-tuscany-tft`, `it-tuscany-toremar`, `it-tuscany-gest`, `it-tuscany-colbus-school`, `it-tuscany-colbus-nonschool`, `it-tuscany-at-school`, `it-tuscany-at-nonschool` |
 | IT | Trentino-Alto Adige | `it-trentino-urban`, `it-trentino-extraurban` |
 | JP | Tokyo | `toei-bus`, `toei-train` |
-| JP | Hyogo | `kobe-shiokaze`, `kobe-satoyama`, `himeji-ieshima`, `takarazuka-runrunbus`, `nishinomiya-sakurayamanami` |
+| JP | Hyogo | `kobe-shiokaze`, `himeji-ieshima`, `takarazuka-runrunbus`, `nishinomiya-sakurayamanami` |
 | JP | Nara | `yamatokoriyama-kingyobus` |
 | JP | Wakayama | `rinkan-koyasan` |
 | JP | Ishikawa | `kanazawa-flatbus`, `kanazawa-hakusan-meguru`, `kanazawa-tsubata-bus` |
 
-For fuller country builds, use Transitland discovery where the API key is
-available. Mobility Database remains available as a no-key fallback and
-cross-checking source:
+For fuller country builds, use Transitland discovery:
 
 ```sh
 TRANSITLAND_API_KEY=... go run ./tool/fetch_gtfs -country JP -complete -complete-source transitland
 TRANSITLAND_API_KEY=... go run ./tool/fetch_gtfs -country IT -complete -complete-source transitland
 TRANSITLAND_API_KEY=... go run ./tool/fetch_gtfs -country CH -complete -complete-source transitland
-go run ./tool/fetch_gtfs -country JP -complete
 ```
 
 Japan still has important rail gaps: major private rail (JR, Tokyo Metro,
-Hankyu, Hanshin, Nankai, Keihan, Kintetsu) and the Shinkansen may require
-ODPT registration or operator-specific terms, so they are intentionally absent
-from the no-key app catalog unless a redistributable public ZIP exists.
+Hankyu, Hanshin, Nankai, Keihan, Kintetsu) and the Shinkansen are absent unless
+they are available through Transitland feed records that the app catalog
+includes.
 
 Licences vary per feed — see [`LICENSES_THIRD_PARTY.md`](LICENSES_THIRD_PARTY.md)
 and each downloaded `MANIFEST.json` for the exact attribution string.
@@ -143,7 +133,6 @@ go run ./tool/fetch_gtfs -list -country JP      # filter to one country
 go run ./tool/fetch_gtfs -feed toei-train       # ~750 KB zip
 go run ./tool/fetch_gtfs -country CH            # fetch the Swiss national feed
 go run ./tool/fetch_gtfs -country IT            # fetch curated Italian feeds
-go run ./tool/fetch_gtfs -country JP -complete  # fetch active no-key JP feeds from Mobility Database
 TRANSITLAND_API_KEY=... go run ./tool/fetch_gtfs -country IT -complete -complete-source transitland
 ```
 

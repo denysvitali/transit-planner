@@ -25,6 +25,7 @@ import 'models.dart';
 import 'feed_catalog.dart';
 
 const String _kFeedCacheDir = 'gtfs';
+const String _transitlandApiKey = String.fromEnvironment('TRANSITLAND_API_KEY');
 
 Future<LocalTransitRouter> openToeiRouter({
   void Function(FeedLoadProgress progress)? onProgress,
@@ -232,12 +233,22 @@ Future<void> _downloadFeed(
 }) async {
   final client = HttpClient();
   try {
-    final request = await client.getUrl(Uri.parse(feed.sourceUrl));
+    final uri = Uri.parse(feed.sourceUrl);
+    final request = await client.getUrl(uri);
+    if (_isTransitlandDownload(uri)) {
+      if (_transitlandApiKey.isEmpty) {
+        throw StateError(
+          'TRANSITLAND_API_KEY must be provided with --dart-define to '
+          'download Transitland feeds.',
+        );
+      }
+      request.headers.set('apikey', _transitlandApiKey);
+    }
     final result = await request.close();
     if (result.statusCode < 200 || result.statusCode >= 300) {
       throw HttpException(
         'failed to download ${feed.id}: HTTP ${result.statusCode}',
-        uri: Uri.parse(feed.sourceUrl),
+        uri: uri,
       );
     }
     final tmp = File('${dst.path}.tmp');
@@ -274,6 +285,11 @@ Future<void> _downloadFeed(
     client.close();
   }
 }
+
+bool _isTransitlandDownload(Uri uri) =>
+    uri.scheme == 'https' &&
+    uri.host == 'transit.land' &&
+    uri.path.startsWith('/api/v2/rest/feeds/');
 
 String _cacheStampWithHash(TransitFeed feed, String hash) =>
     '${feed.sourceUrl}\n$hash';

@@ -48,7 +48,6 @@ void main() {
         'jbda-kaetsunou-kaetsunouippan',
         'jbda-chitetsu-chitetsushinaidensha',
         'kobe-shiokaze',
-        'kobe-satoyama',
         'himeji-ieshima',
         'takarazuka-runrunbus',
         'nishinomiya-sakurayamanami',
@@ -73,7 +72,7 @@ void main() {
     );
   });
 
-  test('regional networks include Mobility Database mirrors', () {
+  test('regional networks include Transitland-discovered feeds', () {
     final hokuriku = findFeedById('kanazawa-region')!;
     final kansai = findFeedById('kansai-public-no-key')!;
 
@@ -123,9 +122,21 @@ void main() {
     expect(componentFeedsFor(toeiTrain), [toeiTrain]);
   });
 
-  test('Hakusan Meguru feed uses current CKAN resource URL', () {
+  test('downloadable feeds use Transitland REST download endpoints', () {
+    for (final feed in selectableTransitFeeds().where(
+      (feed) => !feed.isCollection,
+    )) {
+      expect(
+        feed.sourceUrl,
+        startsWith('https://transit.land/api/v2/rest/feeds/'),
+        reason: '${feed.id} must download through Transitland',
+      );
+    }
+  });
+
+  test('Hakusan Meguru feed uses Transitland source record', () {
     final meguru = findFeedById('kanazawa-hakusan-meguru')!;
 
-    expect(meguru.sourceUrl, contains('50049b19-fe9f-4ca1-9ea9-9d0a24141644'));
+    expect(meguru.sourceUrl, contains('f-白山市コミュニティバスめぐーる'));
   });
 }
