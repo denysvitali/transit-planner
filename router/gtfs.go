@@ -49,6 +49,7 @@ type Transfer struct {
 }
 
 const sameStationTransferDuration = 120
+const sameStationTransferMaxMeters = 500.0
 
 type Feed struct {
 	Stops     map[string]Stop
@@ -213,33 +214,67 @@ func loadTrips(fsys fs.FS) (map[string]Trip, error) {
 }
 
 func loadStopTimes(fsys fs.FS) (map[string][]StopTime, error) {
-	rows, err := readCSV(fsys, "stop_times.txt")
+	file, reader, header, err := openCSV(fsys, "stop_times.txt")
 	if err != nil {
 		return nil, err
 	}
+	defer file.Close()
+
+	tripIDCol, ok := header["trip_id"]
+	if !ok {
+		return nil, errors.New("stop_times.txt: missing trip_id")
+	}
+	arrivalCol, ok := header["arrival_time"]
+	if !ok {
+		return nil, errors.New("stop_times.txt: missing arrival_time")
+	}
+	departureCol, ok := header["departure_time"]
+	if !ok {
+		return nil, errors.New("stop_times.txt: missing departure_time")
+	}
+	stopIDCol, ok := header["stop_id"]
+	if !ok {
+		return nil, errors.New("stop_times.txt: missing stop_id")
+	}
+	sequenceCol, ok := header["stop_sequence"]
+	if !ok {
+		return nil, errors.New("stop_times.txt: missing stop_sequence")
+	}
+
 	times := map[string][]StopTime{}
-	for _, row := range rows {
+	for {
+		record, err := reader.Read()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
 		// Real feeds (e.g. Toei) leave arrival_time and departure_time blank
 		// for non-timepoint intermediate stops. Skip them so the trip pattern
 		// still loads; the router boards/alights only at timed stops.
-		if row["arrival_time"] == "" && row["departure_time"] == "" {
+		tripID := csvValue(record, tripIDCol)
+		arrivalRaw := csvValue(record, arrivalCol)
+		departureRaw := csvValue(record, departureCol)
+		stopID := csvValue(record, stopIDCol)
+		sequenceRaw := csvValue(record, sequenceCol)
+		if arrivalRaw == "" && departureRaw == "" {
 			continue
 		}
-		arrivalRaw := firstNonEmpty(row["arrival_time"], row["departure_time"])
-		arrival, err := parseGTFSTime(arrivalRaw)
+		arrival, err := parseGTFSTime(firstNonEmpty(arrivalRaw, departureRaw))
 		if err != nil {
 			return nil, err
 		}
-		departure, err := parseGTFSTime(firstNonEmpty(row["departure_time"], row["arrival_time"]))
+		departure, err := parseGTFSTime(firstNonEmpty(departureRaw, arrivalRaw))
 		if err != nil {
 			return nil, err
 		}
-		sequence, err := strconv.Atoi(row["stop_sequence"])
+		sequence, err := strconv.Atoi(sequenceRaw)
 		if err != nil {
-			return nil, fmt.Errorf("stop sequence for trip %q: %w", row["trip_id"], err)
+			return nil, fmt.Errorf("stop sequence for trip %q: %w", tripID, err)
 		}
-		times[row["trip_id"]] = append(times[row["trip_id"]], StopTime{
-			StopID:    row["stop_id"],
+		times[tripID] = append(times[tripID], StopTime{
+			StopID:    stopID,
 			Sequence:  sequence,
 			Arrival:   arrival,
 			Departure: departure,
@@ -290,6 +325,9 @@ func appendSameStationTransfers(stops map[string]Stop, transfers []Transfer) []T
 		for _, from := range namedStops {
 			for _, to := range namedStops {
 				if from.ID == to.ID {
+					continue
+				}
+				if HaversineMeters(from.Lat, from.Lon, to.Lat, to.Lon) > sameStationTransferMaxMeters {
 					continue
 				}
 				key := from.ID + "\x00" + to.ID
@@ -353,6 +391,38 @@ func readCSV(fsys fs.FS, name string) ([]map[string]string, error) {
 		rows = append(rows, row)
 	}
 	return rows, nil
+}
+
+func openCSV(fsys fs.FS, name string) (fs.File, *csv.Reader, map[string]int, error) {
+	file, err := fsys.Open(name)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	reader := csv.NewReader(file)
+	reader.FieldsPerRecord = -1
+	reader.LazyQuotes = true
+	rawHeader, err := reader.Read()
+	if err != nil {
+		file.Close()
+		return nil, nil, nil, err
+	}
+	header := make(map[string]int, len(rawHeader))
+	for i, name := range rawHeader {
+		name = strings.TrimSpace(name)
+		if i == 0 {
+			name = strings.TrimPrefix(name, "\ufeff")
+		}
+		header[name] = i
+	}
+	return file, reader, header, nil
+}
+
+func csvValue(record []string, index int) string {
+	if index < 0 || index >= len(record) {
+		return ""
+	}
+	return strings.TrimSpace(record[index])
 }
 
 func parseGTFSTime(value string) (int, error) {

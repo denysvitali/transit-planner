@@ -20,9 +20,10 @@ import (
 )
 
 const (
-	maxEndpointCandidates = 8
-	maxEndpointWalkMeters = 2000.0
-	walkMetersPerSecond   = 1.4
+	maxEndpointCandidates  = 8
+	maxEndpointWalkMeters  = 2000.0
+	walkMetersPerSecond    = 1.4
+	maxConcurrentFeedLoads = 4
 )
 
 // feedHandle bundles a parsed GTFS feed with its prebuilt engine so that
@@ -442,21 +443,45 @@ func loadFeed(dir, zip string, sources []feedSource) (*router.Feed, []skippedFee
 // merged network. Only structural request errors (missing/duplicate prefix)
 // short-circuit the merge.
 func loadMergedFeeds(sources []feedSource) (*router.Feed, []skippedFeed, error) {
-	feeds := make(map[string]*router.Feed, len(sources))
-	var skipped []skippedFeed
+	seenPrefixes := make(map[string]struct{}, len(sources))
 	for _, source := range sources {
 		if source.Prefix == "" {
 			return nil, nil, errors.New("merged feeds require a prefix")
 		}
-		if _, exists := feeds[source.Prefix]; exists {
+		if _, exists := seenPrefixes[source.Prefix]; exists {
 			return nil, nil, errors.New("duplicate merged feed prefix: " + source.Prefix)
 		}
-		feed, err := loadSingleFeed(source.FeedDir, source.FeedZip)
-		if err != nil {
-			skipped = append(skipped, skippedFeed{Prefix: source.Prefix, Error: err.Error()})
+		seenPrefixes[source.Prefix] = struct{}{}
+	}
+
+	type result struct {
+		prefix string
+		feed   *router.Feed
+		err    error
+	}
+	results := make([]result, len(sources))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, maxConcurrentFeedLoads)
+	for i, source := range sources {
+		wg.Add(1)
+		go func(i int, source feedSource) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			feed, err := loadSingleFeed(source.FeedDir, source.FeedZip)
+			results[i] = result{prefix: source.Prefix, feed: feed, err: err}
+		}(i, source)
+	}
+	wg.Wait()
+
+	feeds := make(map[string]*router.Feed, len(sources))
+	var skipped []skippedFeed
+	for _, result := range results {
+		if result.err != nil {
+			skipped = append(skipped, skippedFeed{Prefix: result.prefix, Error: result.err.Error()})
 			continue
 		}
-		feeds[source.Prefix] = feed
+		feeds[result.prefix] = result.feed
 	}
 	if len(feeds) == 0 {
 		return nil, skipped, errors.New("all merged feeds failed to load")
