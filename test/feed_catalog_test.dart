@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:transit_planner/src/feed_catalog.dart';
 
 void main() {
-  test('default app feed does not eagerly download Transitland coverage', () {
+  test('app can start bundled and opt into Transitland coverage', () {
     final defaultFeed = findFeedById(kDefaultFeedId);
     final transitland = findFeedById('transitland-coverage');
 
@@ -11,6 +11,8 @@ void main() {
     expect(defaultFeed.isBundled, isTrue);
     expect(transitland, isNotNull);
     expect(transitland!.isCollection, isTrue);
+    expect(appNetworkFeeds().first.id, 'transitland-coverage');
+    expect(appNetworkFeeds(), contains(transitland));
     expect(
       componentFeedsFor(transitland).map((feed) => feed.id),
       containsAll([

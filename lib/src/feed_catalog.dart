@@ -1,8 +1,7 @@
 // Catalog of known GTFS feeds and merged regional networks for the app.
 //
-// The app uses one default feed and does not expose feed selection. Broad
-// Transitland-discovered coverage must be prebuilt or loaded lazily rather than
-// downloading every component feed at startup.
+// The app starts with one bundled default feed, then lets users opt into
+// broader Transitland-discovered networks from the route screen.
 part 'feed_catalog.g.dart';
 
 class TransitFeed {
@@ -42,6 +41,15 @@ class TransitFeed {
 
 const String kDefaultFeedId = 'toei-train';
 
+const List<String> kAppNetworkFeedIds = [
+  'transitland-coverage',
+  'jp-public-no-key',
+  'ch-national',
+  'it-public-regional',
+  'tokyo-toei',
+  kDefaultFeedId,
+];
+
 TransitFeed? findFeedById(String id) {
   for (final feed in kTransitFeeds) {
     if (feed.id == id) {
@@ -60,3 +68,8 @@ List<TransitFeed> componentFeedsFor(TransitFeed feed) {
       .whereType<TransitFeed>()
       .toList(growable: false);
 }
+
+List<TransitFeed> appNetworkFeeds() => kAppNetworkFeedIds
+    .map(findFeedById)
+    .whereType<TransitFeed>()
+    .toList(growable: false);

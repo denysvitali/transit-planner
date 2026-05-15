@@ -53,6 +53,8 @@ class _HomePageState extends State<HomePage> {
 
   MapLibreMapController? _mapController;
   bool _styleLoaded = false;
+  bool _locationLayerEnabled = false;
+  LocationCoordinate? _lastUserLocation;
   final List<Symbol> _markerSymbols = [];
   final List<Line> _routeLines = [];
 
@@ -124,6 +126,19 @@ class _HomePageState extends State<HomePage> {
     context.go('/settings');
   }
 
+  Future<void> _chooseFeed() async {
+    final selected = await showModalBottomSheet<TransitFeed>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) =>
+          _NetworkPicker(activeFeed: _activeFeed, feeds: appNetworkFeeds()),
+    );
+    if (selected == null || selected.id == _activeFeed.id) {
+      return;
+    }
+    await _openFeed(selected);
+  }
+
   RoutePoint? _pickInitialOrigin(List<TransitStop> stops) {
     if (stops.isEmpty) return null;
     final preferred = const ['001', '101', 'wankdorf'];
@@ -149,7 +164,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _editOrigin() async {
-    final point = await _pickPoint(title: 'Choose origin');
+    final point = await _pickPoint(
+      title: 'Choose origin',
+      allowCurrentLocation: true,
+    );
     if (point == null) return;
     setState(() => _origin = point);
     await _refreshMapOverlays();
@@ -162,7 +180,10 @@ class _HomePageState extends State<HomePage> {
     await _refreshMapOverlays();
   }
 
-  Future<RoutePoint?> _pickPoint({required String title}) async {
+  Future<RoutePoint?> _pickPoint({
+    required String title,
+    bool allowCurrentLocation = false,
+  }) async {
     return Navigator.of(context).push<RoutePoint>(
       MaterialPageRoute<RoutePoint>(
         builder: (_) => LocationSearchPage(
@@ -172,9 +193,38 @@ class _HomePageState extends State<HomePage> {
             latitude: _activeFeed.centerLatitude,
             longitude: _activeFeed.centerLongitude,
           ),
+          allowCurrentLocation: allowCurrentLocation,
+          currentLocationProvider: allowCurrentLocation
+              ? _resolveCurrentLocation
+              : null,
+          initialNearbyLocation: _lastUserLocation,
         ),
       ),
     );
+  }
+
+  Future<LocationCoordinate?> _resolveCurrentLocation() async {
+    final cached = _lastUserLocation;
+    if (cached != null) return cached;
+    final controller = _mapController;
+    if (controller == null) return null;
+    if (!_locationLayerEnabled && mounted) {
+      setState(() => _locationLayerEnabled = true);
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    }
+    for (var attempt = 0; attempt < 10; attempt++) {
+      final latLng = await controller.requestMyLocationLatLng();
+      if (latLng != null) {
+        final location = (
+          latitude: latLng.latitude,
+          longitude: latLng.longitude,
+        );
+        _lastUserLocation = location;
+        return location;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    }
+    return null;
   }
 
   void _swapEndpoints() {
@@ -405,7 +455,7 @@ class _HomePageState extends State<HomePage> {
               bounds,
               left: 48,
               right: 48,
-              top: 220,
+              top: 280,
               bottom: 280,
             ),
           );
@@ -468,10 +518,16 @@ class _HomePageState extends State<HomePage> {
                       ),
                       zoom: 12,
                     ),
-                    myLocationEnabled: false,
+                    myLocationEnabled: _locationLayerEnabled,
                     compassEnabled: true,
                     onMapCreated: (c) => _mapController = c,
                     onStyleLoadedCallback: _onMapStyleLoaded,
+                    onUserLocationUpdated: (location) {
+                      _lastUserLocation = (
+                        latitude: location.position.latitude,
+                        longitude: location.position.longitude,
+                      );
+                    },
                   ),
                 ),
                 const Positioned(
@@ -486,8 +542,10 @@ class _HomePageState extends State<HomePage> {
                   child: SafeArea(
                     bottom: false,
                     child: _SearchHeader(
+                      activeFeed: _activeFeed,
                       origin: _origin,
                       destination: _destination,
+                      onChooseFeed: _chooseFeed,
                       onEditOrigin: _editOrigin,
                       onEditDestination: _editDestination,
                       onSwap: _swapEndpoints,
@@ -660,15 +718,19 @@ class _LoadErrorState extends StatelessWidget {
 
 class _SearchHeader extends StatelessWidget {
   const _SearchHeader({
+    required this.activeFeed,
     required this.origin,
     required this.destination,
+    required this.onChooseFeed,
     required this.onEditOrigin,
     required this.onEditDestination,
     required this.onSwap,
   });
 
+  final TransitFeed activeFeed;
   final RoutePoint? origin;
   final RoutePoint? destination;
+  final VoidCallback onChooseFeed;
   final VoidCallback onEditOrigin;
   final VoidCallback onEditDestination;
   final VoidCallback onSwap;
@@ -691,6 +753,8 @@ class _SearchHeader extends StatelessWidget {
           padding: const EdgeInsets.all(AppSpacing.s),
           child: Column(
             children: [
+              _NetworkField(feed: activeFeed, onTap: onChooseFeed),
+              const Divider(height: 1),
               Row(
                 children: [
                   Expanded(
@@ -727,6 +791,141 @@ class _SearchHeader extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _NetworkField extends StatelessWidget {
+  const _NetworkField({required this.feed, required this.onTap});
+
+  final TransitFeed feed;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final componentCount = componentFeedsFor(feed).length;
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppRadius.s),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.s,
+          vertical: AppSpacing.s,
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.public, color: theme.colorScheme.secondary, size: 20),
+            const SizedBox(width: AppSpacing.s),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Network',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  Text(
+                    feed.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  Text(
+                    componentCount == 1
+                        ? '1 GTFS feed'
+                        : '$componentCount GTFS feeds',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.s),
+            const Icon(Icons.expand_more),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NetworkPicker extends StatelessWidget {
+  const _NetworkPicker({required this.activeFeed, required this.feeds});
+
+  final TransitFeed activeFeed;
+  final List<TransitFeed> feeds;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.m,
+          0,
+          AppSpacing.m,
+          AppSpacing.m,
+        ),
+        children: [
+          Text(
+            'Network',
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s),
+          for (final feed in feeds)
+            _NetworkOption(
+              feed: feed,
+              selected: feed.id == activeFeed.id,
+              onTap: () => Navigator.of(context).pop(feed),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NetworkOption extends StatelessWidget {
+  const _NetworkOption({
+    required this.feed,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final TransitFeed feed;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final componentCount = componentFeedsFor(feed).length;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(
+        selected ? Icons.radio_button_checked : Icons.radio_button_off,
+        color: selected ? theme.colorScheme.primary : null,
+      ),
+      title: Text(feed.name),
+      subtitle: Text(
+        feed.isCollection
+            ? '$componentCount GTFS feeds · ${feed.description}'
+            : feed.description,
+      ),
+      trailing: feed.id == 'transitland-coverage'
+          ? const Icon(Icons.public)
+          : null,
+      onTap: onTap,
     );
   }
 }

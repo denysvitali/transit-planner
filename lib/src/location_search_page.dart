@@ -7,6 +7,9 @@ import 'geocoder.dart';
 import 'models.dart';
 import 'theme.dart';
 
+typedef LocationCoordinate = ({double latitude, double longitude});
+typedef CurrentLocationProvider = Future<LocationCoordinate?> Function();
+
 /// Modal "Google-Maps"-style location picker. Accepts free-form text input
 /// and surfaces:
 ///
@@ -25,33 +28,44 @@ class LocationSearchPage extends StatefulWidget {
     required this.feedCenter,
     this.initialQuery = '',
     this.geocoder,
+    this.allowCurrentLocation = false,
+    this.currentLocationProvider,
+    this.initialNearbyLocation,
   });
 
   final String title;
   final List<TransitStop> stops;
-  final ({double latitude, double longitude}) feedCenter;
+  final LocationCoordinate feedCenter;
   final String initialQuery;
   final Geocoder? geocoder;
+  final bool allowCurrentLocation;
+  final CurrentLocationProvider? currentLocationProvider;
+  final LocationCoordinate? initialNearbyLocation;
 
   @override
   State<LocationSearchPage> createState() => _LocationSearchPageState();
 }
 
 class _LocationSearchPageState extends State<LocationSearchPage> {
-  late final TextEditingController _controller =
-      TextEditingController(text: widget.initialQuery);
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialQuery,
+  );
   late final Geocoder _geocoder = widget.geocoder ?? NominatimGeocoder();
 
   Timer? _debounce;
   String _query = '';
   bool _geocoding = false;
+  bool _locating = false;
   List<GeocodeResult> _geoResults = const [];
+  LocationCoordinate? _nearbyLocation;
+  String? _locationError;
   int _requestSeq = 0;
 
   @override
   void initState() {
     super.initState();
     _query = widget.initialQuery;
+    _nearbyLocation = widget.initialNearbyLocation;
     if (_query.trim().length >= 2) {
       _scheduleGeocode();
     }
@@ -88,24 +102,28 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
     final results = await _geocoder.search(
       _query,
       bias: GeocodeBias(
-        centerLat: widget.feedCenter.latitude,
-        centerLon: widget.feedCenter.longitude,
+        centerLat: _searchAnchor.latitude,
+        centerLon: _searchAnchor.longitude,
       ),
     );
     if (!mounted || seq != _requestSeq) return;
     setState(() {
       _geocoding = false;
-      _geoResults = results;
+      _geoResults = geocodeResultsSortedByDistance(results, _searchAnchor);
     });
   }
 
+  LocationCoordinate get _searchAnchor => _nearbyLocation ?? widget.feedCenter;
+
   List<TransitStop> get _matchingStops {
     final q = _query.trim().toLowerCase();
-    if (q.isEmpty) return widget.stops.take(20).toList(growable: false);
-    return widget.stops
-        .where((s) => s.name.toLowerCase().contains(q))
-        .take(20)
-        .toList(growable: false);
+    final matches = q.isEmpty
+        ? widget.stops
+        : widget.stops.where((s) => s.name.toLowerCase().contains(q));
+    return stopsSortedByDistance(
+      matches,
+      _searchAnchor,
+    ).take(20).toList(growable: false);
   }
 
   void _selectStop(TransitStop stop) {
@@ -126,6 +144,57 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
       snappedStop: snapped,
     );
     Navigator.of(context).pop(point);
+  }
+
+  String _distanceFromSearchAnchor(double latitude, double longitude) {
+    return formatDistance(
+      haversineMeters(
+        _searchAnchor.latitude,
+        _searchAnchor.longitude,
+        latitude,
+        longitude,
+      ),
+    );
+  }
+
+  Future<void> _selectCurrentLocation() async {
+    final provider = widget.currentLocationProvider;
+    if (provider == null || _locating) return;
+    setState(() {
+      _locating = true;
+      _locationError = null;
+    });
+    final location = await provider();
+    if (!mounted) return;
+    if (location == null) {
+      setState(() {
+        _locating = false;
+        _locationError = 'Location is unavailable. Check location permission.';
+      });
+      return;
+    }
+    final snapped = nearestStop(
+      widget.stops,
+      location.latitude,
+      location.longitude,
+    );
+    setState(() {
+      _nearbyLocation = location;
+      _locating = false;
+    });
+    final description = snapped == null
+        ? 'Current GPS position'
+        : 'Nearest stop: ${snapped.name} '
+              '(${formatDistance(haversineMeters(location.latitude, location.longitude, snapped.latitude, snapped.longitude))})';
+    Navigator.of(context).pop(
+      RoutePoint(
+        name: 'My location',
+        description: description,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        snappedStop: snapped,
+      ),
+    );
   }
 
   @override
@@ -170,6 +239,25 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
       ),
       body: ListView(
         children: [
+          if (widget.allowCurrentLocation) ...[
+            ListTile(
+              leading: _locating
+                  ? const SizedBox.square(
+                      dimension: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.my_location),
+              title: const Text('Use my location'),
+              subtitle: Text(
+                _locationError ??
+                    'Route from your current position and nearest stop',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              onTap: _locating ? null : _selectCurrentLocation,
+            ),
+            const Divider(height: 1),
+          ],
           if (stops.isNotEmpty) ...[
             _SectionHeader(label: 'Stops'),
             for (final stop in stops)
@@ -177,8 +265,7 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
                 leading: const Icon(Icons.directions_subway_filled_outlined),
                 title: Text(stop.name),
                 subtitle: Text(
-                  '${stop.latitude.toStringAsFixed(4)}, '
-                  '${stop.longitude.toStringAsFixed(4)}',
+                  '${_distanceFromSearchAnchor(stop.latitude, stop.longitude)} away',
                 ),
                 onTap: () => _selectStop(stop),
               ),
@@ -217,7 +304,7 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
               leading: const Icon(Icons.place_outlined),
               title: Text(result.shortName ?? result.displayName),
               subtitle: Text(
-                result.displayName,
+                '${_distanceFromSearchAnchor(result.latitude, result.longitude)} away • ${result.displayName}',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -286,7 +373,8 @@ double haversineMeters(double lat1, double lon1, double lat2, double lon2) {
   const earthRadius = 6371000.0;
   final dLat = _deg2rad(lat2 - lat1);
   final dLon = _deg2rad(lon2 - lon1);
-  final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+  final a =
+      math.sin(dLat / 2) * math.sin(dLat / 2) +
       math.cos(_deg2rad(lat1)) *
           math.cos(_deg2rad(lat2)) *
           math.sin(dLon / 2) *
@@ -296,3 +384,55 @@ double haversineMeters(double lat1, double lon1, double lat2, double lon2) {
 }
 
 double _deg2rad(double deg) => deg * (math.pi / 180.0);
+
+List<TransitStop> stopsSortedByDistance(
+  Iterable<TransitStop> stops,
+  LocationCoordinate anchor,
+) {
+  final sorted = stops.toList(growable: false);
+  sorted.sort((a, b) {
+    final aDistance = haversineMeters(
+      anchor.latitude,
+      anchor.longitude,
+      a.latitude,
+      a.longitude,
+    );
+    final bDistance = haversineMeters(
+      anchor.latitude,
+      anchor.longitude,
+      b.latitude,
+      b.longitude,
+    );
+    return aDistance.compareTo(bDistance);
+  });
+  return sorted;
+}
+
+List<GeocodeResult> geocodeResultsSortedByDistance(
+  Iterable<GeocodeResult> results,
+  LocationCoordinate anchor,
+) {
+  final sorted = results.toList(growable: false);
+  sorted.sort((a, b) {
+    final aDistance = haversineMeters(
+      anchor.latitude,
+      anchor.longitude,
+      a.latitude,
+      a.longitude,
+    );
+    final bDistance = haversineMeters(
+      anchor.latitude,
+      anchor.longitude,
+      b.latitude,
+      b.longitude,
+    );
+    return aDistance.compareTo(bDistance);
+  });
+  return sorted;
+}
+
+String formatDistance(double meters) {
+  if (meters < 1000) return '${meters.round()} m';
+  final km = meters / 1000;
+  return '${km.toStringAsFixed(km < 10 ? 1 : 0)} km';
+}
