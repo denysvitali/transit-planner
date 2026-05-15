@@ -6,6 +6,7 @@
     go
     git
     jdk21
+    sqlc
   ];
 
   languages.go.enable = true;

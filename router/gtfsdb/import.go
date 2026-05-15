@@ -21,6 +21,8 @@ import (
 	"strings"
 	"time"
 
+	sqlcdb "github.com/denysvitali/transit-planner/router/gtfsdb/db"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -96,22 +98,23 @@ func ImportFeed(ctx context.Context, opts ImportOptions) (ImportResult, error) {
 		return ImportResult{}, err
 	}
 	defer tx.Rollback()
+	q := sqlcdb.New(tx)
 
-	feedID, err := upsertFeed(ctx, tx, opts.Feed)
+	feedID, err := upsertFeed(ctx, q, opts.Feed)
 	if err != nil {
 		return ImportResult{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `update feed_versions set active = 0 where feed_id = ?`, feedID); err != nil {
+	if err := q.DeactivateFeedVersions(ctx, feedID); err != nil {
 		return ImportResult{}, err
 	}
-	versionID, err := insertFeedVersion(ctx, tx, feedID, opts, aggregateHash)
+	versionID, err := insertFeedVersion(ctx, q, feedID, opts, aggregateHash)
 	if err != nil {
 		return ImportResult{}, err
 	}
 
 	var totalRows int
 	for _, file := range files {
-		rows, err := importGTFSFile(ctx, tx, feedID, versionID, file)
+		rows, err := importGTFSFile(ctx, q, feedID, versionID, file)
 		if err != nil {
 			return ImportResult{}, err
 		}
@@ -129,39 +132,31 @@ func ImportFeed(ctx context.Context, opts ImportOptions) (ImportResult, error) {
 	}, nil
 }
 
-func upsertFeed(ctx context.Context, tx *sql.Tx, feed FeedMetadata) (int64, error) {
-	_, err := tx.ExecContext(ctx, `
-insert into feeds (
-	code, name, country_code, region, publisher_name, license_name, source_url, attribution_text
-) values (?, ?, ?, ?, ?, ?, ?, ?)
-on conflict(code) do update set
-	name = excluded.name,
-	country_code = excluded.country_code,
-	region = excluded.region,
-	publisher_name = excluded.publisher_name,
-	license_name = excluded.license_name,
-	source_url = excluded.source_url,
-	attribution_text = excluded.attribution_text`,
-		feed.Code, feed.Name, feed.CountryCode, feed.Region, feed.Publisher, feed.License, feed.SourceURL, feed.Attribution,
-	)
-	if err != nil {
+func upsertFeed(ctx context.Context, q *sqlcdb.Queries, feed FeedMetadata) (int64, error) {
+	if err := q.UpsertFeed(ctx, sqlcdb.UpsertFeedParams{
+		Code:            feed.Code,
+		Name:            feed.Name,
+		CountryCode:     textValue(feed.CountryCode),
+		Region:          textValue(feed.Region),
+		PublisherName:   textValue(feed.Publisher),
+		LicenseName:     textValue(feed.License),
+		SourceUrl:       textValue(feed.SourceURL),
+		AttributionText: textValue(feed.Attribution),
+	}); err != nil {
 		return 0, err
 	}
 
-	var id int64
-	if err := tx.QueryRowContext(ctx, `select id from feeds where code = ?`, feed.Code).Scan(&id); err != nil {
-		return 0, err
-	}
-	return id, nil
+	return q.GetFeedIDByCode(ctx, feed.Code)
 }
 
-func insertFeedVersion(ctx context.Context, tx *sql.Tx, feedID int64, opts ImportOptions, hash string) (int64, error) {
-	result, err := tx.ExecContext(ctx, `
-insert into feed_versions (
-	feed_id, source_path, source_url, sha256, imported_at, active
-) values (?, ?, ?, ?, ?, 1)`,
-		feedID, opts.SourcePath, opts.Feed.SourceURL, hash, opts.ImportedAt.UTC().Format(time.RFC3339),
-	)
+func insertFeedVersion(ctx context.Context, q *sqlcdb.Queries, feedID int64, opts ImportOptions, hash string) (int64, error) {
+	result, err := q.InsertFeedVersion(ctx, sqlcdb.InsertFeedVersionParams{
+		FeedID:     feedID,
+		SourcePath: opts.SourcePath,
+		SourceUrl:  textValue(opts.Feed.SourceURL),
+		Sha256:     hash,
+		ImportedAt: opts.ImportedAt.UTC().Format(time.RFC3339),
+	})
 	if err != nil {
 		return 0, err
 	}
@@ -267,7 +262,7 @@ func dedupeFiles(files []gtfsFile) []gtfsFile {
 	return out
 }
 
-func importGTFSFile(ctx context.Context, tx *sql.Tx, feedID, versionID int64, file gtfsFile) (int, error) {
+func importGTFSFile(ctx context.Context, q *sqlcdb.Queries, feedID, versionID int64, file gtfsFile) (int, error) {
 	reader := csv.NewReader(bytes.NewReader(file.data))
 	reader.FieldsPerRecord = -1
 
@@ -286,12 +281,14 @@ func importGTFSFile(ctx context.Context, tx *sql.Tx, feedID, versionID int64, fi
 		return 0, err
 	}
 
-	fileResult, err := tx.ExecContext(ctx, `
-insert into gtfs_files (
-	feed_id, feed_version_id, filename, sha256, header_json, raw_csv
-) values (?, ?, ?, ?, ?, ?)`,
-		feedID, versionID, file.name, file.sum, string(headerJSON), file.data,
-	)
+	fileResult, err := q.InsertGTFSFile(ctx, sqlcdb.InsertGTFSFileParams{
+		FeedID:        feedID,
+		FeedVersionID: versionID,
+		Filename:      file.name,
+		Sha256:        file.sum,
+		HeaderJson:    string(headerJSON),
+		RawCsv:        file.data,
+	})
 	if err != nil {
 		return 0, err
 	}
@@ -314,21 +311,26 @@ insert into gtfs_files (
 		if err != nil {
 			return 0, err
 		}
-		if _, err := tx.ExecContext(ctx, `
-insert into gtfs_rows (
-	feed_id, feed_version_id, file_id, filename, row_index, row_json
-) values (?, ?, ?, ?, ?, ?)`,
-			feedID, versionID, fileID, file.name, rows, string(rowJSON),
-		); err != nil {
+		if err := q.InsertGTFSRow(ctx, sqlcdb.InsertGTFSRowParams{
+			FeedID:        feedID,
+			FeedVersionID: versionID,
+			FileID:        fileID,
+			Filename:      file.name,
+			RowIndex:      int64(rows),
+			RowJson:       string(rowJSON),
+		}); err != nil {
 			return 0, err
 		}
-		if err := insertTypedRow(ctx, tx, feedID, versionID, file.name, rows, row); err != nil {
+		if err := insertTypedRow(ctx, q, feedID, versionID, file.name, rows, row); err != nil {
 			return 0, fmt.Errorf("%s row %d: %w", file.name, rows+2, err)
 		}
 		rows++
 	}
 
-	if _, err := tx.ExecContext(ctx, `update gtfs_files set row_count = ? where id = ?`, rows, fileID); err != nil {
+	if err := q.UpdateGTFSFileRowCount(ctx, sqlcdb.UpdateGTFSFileRowCountParams{
+		RowCount: int64(rows),
+		ID:       fileID,
+	}); err != nil {
 		return 0, err
 	}
 	return rows, nil
@@ -349,78 +351,186 @@ func rowMap(header, record []string) map[string]string {
 	return row
 }
 
-func insertTypedRow(ctx context.Context, tx *sql.Tx, feedID, versionID int64, filename string, rowIndex int, row map[string]string) error {
+func insertTypedRow(ctx context.Context, q *sqlcdb.Queries, feedID, versionID int64, filename string, rowIndex int, row map[string]string) error {
 	switch filename {
 	case "agency.txt":
-		return exec(ctx, tx, `insert into agencies values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			feedID, versionID, firstNonEmpty(row["agency_id"], "agency"), row["agency_name"], row["agency_url"], row["agency_timezone"], row["agency_lang"], row["agency_phone"], row["agency_fare_url"], row["agency_email"])
+		return q.InsertAgency(ctx, sqlcdb.InsertAgencyParams{
+			FeedID:         feedID,
+			FeedVersionID:  versionID,
+			AgencyID:       firstNonEmpty(row["agency_id"], "agency"),
+			AgencyName:     textValue(row["agency_name"]),
+			AgencyUrl:      textValue(row["agency_url"]),
+			AgencyTimezone: textValue(row["agency_timezone"]),
+			AgencyLang:     textValue(row["agency_lang"]),
+			AgencyPhone:    textValue(row["agency_phone"]),
+			AgencyFareUrl:  textValue(row["agency_fare_url"]),
+			AgencyEmail:    textValue(row["agency_email"]),
+		})
 	case "stops.txt":
-		return exec(ctx, tx, `insert into stops values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			feedID, versionID, row["stop_id"], row["stop_code"], row["stop_name"], row["stop_desc"], nullableFloat(row["stop_lat"]), nullableFloat(row["stop_lon"]), row["zone_id"], row["stop_url"], nullableInt(row["location_type"]), row["parent_station"], row["stop_timezone"], row["wheelchair_boarding"], row["platform_code"])
+		return q.InsertStop(ctx, sqlcdb.InsertStopParams{
+			FeedID:             feedID,
+			FeedVersionID:      versionID,
+			StopID:             row["stop_id"],
+			StopCode:           textValue(row["stop_code"]),
+			StopName:           textValue(row["stop_name"]),
+			StopDesc:           textValue(row["stop_desc"]),
+			StopLat:            nullableFloat(row["stop_lat"]),
+			StopLon:            nullableFloat(row["stop_lon"]),
+			ZoneID:             textValue(row["zone_id"]),
+			StopUrl:            textValue(row["stop_url"]),
+			LocationType:       nullableInt(row["location_type"]),
+			ParentStation:      textValue(row["parent_station"]),
+			StopTimezone:       textValue(row["stop_timezone"]),
+			WheelchairBoarding: textValue(row["wheelchair_boarding"]),
+			PlatformCode:       textValue(row["platform_code"]),
+		})
 	case "routes.txt":
-		return exec(ctx, tx, `insert into routes values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			feedID, versionID, row["route_id"], row["agency_id"], row["route_short_name"], row["route_long_name"], row["route_desc"], nullableInt(row["route_type"]), row["route_url"], row["route_color"], row["route_text_color"], row["route_sort_order"], row["continuous_pickup"])
+		return q.InsertRoute(ctx, sqlcdb.InsertRouteParams{
+			FeedID:           feedID,
+			FeedVersionID:    versionID,
+			RouteID:          row["route_id"],
+			AgencyID:         textValue(row["agency_id"]),
+			RouteShortName:   textValue(row["route_short_name"]),
+			RouteLongName:    textValue(row["route_long_name"]),
+			RouteDesc:        textValue(row["route_desc"]),
+			RouteType:        nullableInt(row["route_type"]),
+			RouteUrl:         textValue(row["route_url"]),
+			RouteColor:       textValue(row["route_color"]),
+			RouteTextColor:   textValue(row["route_text_color"]),
+			RouteSortOrder:   textValue(row["route_sort_order"]),
+			ContinuousPickup: textValue(row["continuous_pickup"]),
+		})
 	case "trips.txt":
-		return exec(ctx, tx, `insert into trips values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			feedID, versionID, row["route_id"], row["service_id"], row["trip_id"], row["trip_headsign"], row["trip_short_name"], nullableInt(row["direction_id"]), row["block_id"], row["shape_id"], row["wheelchair_accessible"], row["bikes_allowed"], row["cars_allowed"])
+		return q.InsertTrip(ctx, sqlcdb.InsertTripParams{
+			FeedID:               feedID,
+			FeedVersionID:        versionID,
+			RouteID:              row["route_id"],
+			ServiceID:            row["service_id"],
+			TripID:               row["trip_id"],
+			TripHeadsign:         textValue(row["trip_headsign"]),
+			TripShortName:        textValue(row["trip_short_name"]),
+			DirectionID:          nullableInt(row["direction_id"]),
+			BlockID:              textValue(row["block_id"]),
+			ShapeID:              textValue(row["shape_id"]),
+			WheelchairAccessible: textValue(row["wheelchair_accessible"]),
+			BikesAllowed:         textValue(row["bikes_allowed"]),
+			CarsAllowed:          textValue(row["cars_allowed"]),
+		})
 	case "stop_times.txt":
-		return exec(ctx, tx, `insert into stop_times values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			feedID, versionID, rowIndex, row["trip_id"], row["arrival_time"], row["departure_time"], row["stop_id"], nullableInt(row["stop_sequence"]), row["stop_headsign"], row["pickup_type"], row["drop_off_type"], row["continuous_pickup"], row["continuous_drop_off"], nullableFloat(row["shape_dist_traveled"]), row["timepoint"])
+		return q.InsertStopTime(ctx, sqlcdb.InsertStopTimeParams{
+			FeedID:            feedID,
+			FeedVersionID:     versionID,
+			RowIndex:          int64(rowIndex),
+			TripID:            row["trip_id"],
+			ArrivalTime:       textValue(row["arrival_time"]),
+			DepartureTime:     textValue(row["departure_time"]),
+			StopID:            row["stop_id"],
+			StopSequence:      nullableInt(row["stop_sequence"]),
+			StopHeadsign:      textValue(row["stop_headsign"]),
+			PickupType:        textValue(row["pickup_type"]),
+			DropOffType:       textValue(row["drop_off_type"]),
+			ContinuousPickup:  textValue(row["continuous_pickup"]),
+			ContinuousDropOff: textValue(row["continuous_drop_off"]),
+			ShapeDistTraveled: nullableFloat(row["shape_dist_traveled"]),
+			Timepoint:         textValue(row["timepoint"]),
+		})
 	case "calendar.txt":
-		return exec(ctx, tx, `insert into calendars values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			feedID, versionID, row["service_id"], boolInt(row["monday"]), boolInt(row["tuesday"]), boolInt(row["wednesday"]), boolInt(row["thursday"]), boolInt(row["friday"]), boolInt(row["saturday"]), boolInt(row["sunday"]), row["start_date"], row["end_date"])
+		return q.InsertCalendar(ctx, sqlcdb.InsertCalendarParams{
+			FeedID:        feedID,
+			FeedVersionID: versionID,
+			ServiceID:     row["service_id"],
+			Monday:        boolInt(row["monday"]),
+			Tuesday:       boolInt(row["tuesday"]),
+			Wednesday:     boolInt(row["wednesday"]),
+			Thursday:      boolInt(row["thursday"]),
+			Friday:        boolInt(row["friday"]),
+			Saturday:      boolInt(row["saturday"]),
+			Sunday:        boolInt(row["sunday"]),
+			StartDate:     textValue(row["start_date"]),
+			EndDate:       textValue(row["end_date"]),
+		})
 	case "calendar_dates.txt":
-		return exec(ctx, tx, `insert into calendar_dates values (?, ?, ?, ?, ?)`,
-			feedID, versionID, row["service_id"], row["date"], nullableInt(row["exception_type"]))
+		return q.InsertCalendarDate(ctx, sqlcdb.InsertCalendarDateParams{
+			FeedID:        feedID,
+			FeedVersionID: versionID,
+			ServiceID:     row["service_id"],
+			Date:          row["date"],
+			ExceptionType: nullableInt(row["exception_type"]),
+		})
 	case "transfers.txt":
-		return exec(ctx, tx, `insert into transfers values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			feedID, versionID, row["from_stop_id"], row["to_stop_id"], row["from_route_id"], row["to_route_id"], row["from_trip_id"], row["to_trip_id"], nullableInt(row["transfer_type"]), nullableInt(row["min_transfer_time"]))
+		return q.InsertTransfer(ctx, sqlcdb.InsertTransferParams{
+			FeedID:          feedID,
+			FeedVersionID:   versionID,
+			FromStopID:      textValue(row["from_stop_id"]),
+			ToStopID:        textValue(row["to_stop_id"]),
+			FromRouteID:     textValue(row["from_route_id"]),
+			ToRouteID:       textValue(row["to_route_id"]),
+			FromTripID:      textValue(row["from_trip_id"]),
+			ToTripID:        textValue(row["to_trip_id"]),
+			TransferType:    nullableInt(row["transfer_type"]),
+			MinTransferTime: nullableInt(row["min_transfer_time"]),
+		})
 	case "shapes.txt":
-		return exec(ctx, tx, `insert into shapes values (?, ?, ?, ?, ?, ?)`,
-			feedID, versionID, row["shape_id"], nullableFloat(row["shape_pt_lat"]), nullableFloat(row["shape_pt_lon"]), nullableInt(row["shape_pt_sequence"]))
+		return q.InsertShape(ctx, sqlcdb.InsertShapeParams{
+			FeedID:          feedID,
+			FeedVersionID:   versionID,
+			ShapeID:         row["shape_id"],
+			ShapePtLat:      nullableFloat(row["shape_pt_lat"]),
+			ShapePtLon:      nullableFloat(row["shape_pt_lon"]),
+			ShapePtSequence: nullableInt(row["shape_pt_sequence"]),
+		})
 	case "feed_info.txt":
-		return exec(ctx, tx, `insert into feed_info values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			feedID, versionID, row["feed_publisher_name"], row["feed_publisher_url"], row["feed_lang"], row["default_lang"], row["feed_start_date"], row["feed_end_date"], row["feed_version"], row["feed_contact_email"])
+		return q.InsertFeedInfo(ctx, sqlcdb.InsertFeedInfoParams{
+			FeedID:            feedID,
+			FeedVersionID:     versionID,
+			FeedPublisherName: textValue(row["feed_publisher_name"]),
+			FeedPublisherUrl:  textValue(row["feed_publisher_url"]),
+			FeedLang:          textValue(row["feed_lang"]),
+			DefaultLang:       textValue(row["default_lang"]),
+			FeedStartDate:     textValue(row["feed_start_date"]),
+			FeedEndDate:       textValue(row["feed_end_date"]),
+			FeedVersion:       textValue(row["feed_version"]),
+			FeedContactEmail:  textValue(row["feed_contact_email"]),
+		})
 	default:
 		return nil
 	}
 }
 
-func exec(ctx context.Context, tx *sql.Tx, query string, args ...any) error {
-	_, err := tx.ExecContext(ctx, query, args...)
-	return err
+func textValue(value string) sql.NullString {
+	return sql.NullString{String: value, Valid: true}
 }
 
-func nullableInt(value string) any {
+func nullableInt(value string) sql.NullInt64 {
 	if strings.TrimSpace(value) == "" {
-		return nil
+		return sql.NullInt64{}
 	}
 	parsed, err := strconv.Atoi(value)
 	if err != nil {
-		return nil
+		return sql.NullInt64{}
 	}
-	return parsed
+	return sql.NullInt64{Int64: int64(parsed), Valid: true}
 }
 
-func nullableFloat(value string) any {
+func nullableFloat(value string) sql.NullFloat64 {
 	if strings.TrimSpace(value) == "" {
-		return nil
+		return sql.NullFloat64{}
 	}
 	parsed, err := strconv.ParseFloat(value, 64)
 	if err != nil {
-		return nil
+		return sql.NullFloat64{}
 	}
-	return parsed
+	return sql.NullFloat64{Float64: parsed, Valid: true}
 }
 
-func boolInt(value string) any {
+func boolInt(value string) sql.NullInt64 {
 	if value == "" {
-		return nil
+		return sql.NullInt64{}
 	}
 	if value == "1" || strings.EqualFold(value, "true") {
-		return 1
+		return sql.NullInt64{Int64: 1, Valid: true}
 	}
-	return 0
+	return sql.NullInt64{Int64: 0, Valid: true}
 }
 
 func firstNonEmpty(values ...string) string {
