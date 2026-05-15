@@ -115,7 +115,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.widgetWithText(AppBar, 'Logs'), findsOneWidget);
-    expect(find.text('Copy warnings and errors'), findsOneWidget);
+    expect(find.text('Copy filtered logs'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Back'));
     await tester.pumpAndSettle();

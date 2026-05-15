@@ -15,7 +15,8 @@ import 'src/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await NetworkSelection.instance.load();
+  AppLogBuffer.instance.info('Transit Planner starting');
+  unawaited(NetworkSelection.instance.load());
 
   final previousFlutterErrorHandler = FlutterError.onError;
   FlutterError.onError = (details) {

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'app_log.dart';
 import 'feed_catalog.dart';
 import 'transitland_catalog.dart';
 
@@ -135,6 +136,13 @@ class NetworkSelection extends ChangeNotifier {
         .toSet();
     if (setEquals(validIds, _selectedFeedIds)) return;
     _selectedFeedIds = validIds;
+    AppLogBuffer.instance.info(
+      validIds.isEmpty
+          ? 'Feed selection cleared'
+          : 'Feed selection: ${validIds.length} feed'
+                '${validIds.length == 1 ? '' : 's'} '
+                '(${(validIds.toList()..sort()).join(', ')})',
+    );
     notifyListeners();
     if (persist) {
       final prefs = await SharedPreferences.getInstance();

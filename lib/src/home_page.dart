@@ -156,8 +156,13 @@ class _HomePageState extends State<HomePage> {
       });
       await _refreshMapOverlays();
       await _plan();
-    } catch (error) {
+    } catch (error, stackTrace) {
       if (!mounted || seq != _feedOpenSeq) return;
+      AppLogBuffer.instance.error(
+        error,
+        stackTrace: stackTrace,
+        context: 'Failed to load feed ${feed.id}',
+      );
       setState(() {
         _router = null;
         _stops = const [];
@@ -329,6 +334,11 @@ class _HomePageState extends State<HomePage> {
     try {
       final itineraries = await router.route(request);
       final filtered = _filterByModes(itineraries, modes);
+      AppLogBuffer.instance.info(
+        'Planning result: ${itineraries.length} itinerar'
+        '${itineraries.length == 1 ? 'y' : 'ies'} '
+        '(${filtered.length} after mode filter)',
+      );
       if (!mounted || seq != _planSeq) return;
       setState(() {
         _itineraries = filtered;

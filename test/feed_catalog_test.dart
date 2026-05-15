@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:transit_planner/src/feed_catalog.dart';
 import 'package:transit_planner/src/transitland_catalog.dart';
 
@@ -53,6 +54,61 @@ void main() {
       'https://transit.land/api/v2/rest/feeds/f-example~jp/download_latest_feed_version',
     );
   });
+
+  test('Transitland feed JSON falls back to feed key for generic names', () {
+    final feed = transitFeedFromTransitlandJson({
+      'id': 456,
+      'onestop_id': 'f-9q9-caltrain',
+      'name': 'Transitland',
+      'license': {'spdx_identifier': 'CC-BY-4.0'},
+      'feed_state': {
+        'feed_version': {
+          'geometry': {
+            'type': 'Point',
+            'coordinates': [-122.4, 37.7],
+          },
+        },
+      },
+    });
+
+    expect(feed, isNotNull);
+    expect(feed!.name, 'Caltrain');
+    expect(feed.publisher, 'Caltrain');
+    expect(feed.description, 'Caltrain GTFS feed discovered from Transitland.');
+  });
+
+  test(
+    'fresh cached Transitland feeds with generic names are repaired',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        'transitland_runtime_feed_catalog_v1': encodeTransitFeeds([
+          const TransitFeed(
+            id: 'transitland-f-9q9-caltrain',
+            name: 'Transitland',
+            description: 'Transitland GTFS feed discovered from Transitland.',
+            country: 'US',
+            region: 'Transitland',
+            publisher: 'Transitland',
+            license: 'Transitland license metadata',
+            sourceUrl:
+                'https://transit.land/api/v2/rest/feeds/f-9q9-caltrain/download_latest_feed_version',
+            localFileName: 'transitland-f-9q9-caltrain.zip',
+            attribution: 'Transit data from Transitland.',
+            centerLatitude: 37.7,
+            centerLongitude: -122.4,
+          ),
+        ]),
+        'transitland_runtime_feed_catalog_updated_at_v1': DateTime.now()
+            .toUtc()
+            .toIso8601String(),
+      });
+
+      await TransitlandCatalog.instance.load();
+
+      expect(kTransitFeeds.single.name, 'Caltrain');
+      expect(kTransitFeeds.single.description, contains('Caltrain GTFS feed'));
+    },
+  );
 
   test('Transitland discovery URI uses license filters', () {
     final uri = transitlandFeedsUri(after: 42);

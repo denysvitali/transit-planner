@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-enum AppLogLevel { warning, error }
+enum AppLogLevel { debug, info, warning, error }
 
 class AppLogEntry {
   const AppLogEntry({
@@ -36,7 +36,7 @@ class AppLogBuffer extends ChangeNotifier {
 
   static final AppLogBuffer instance = AppLogBuffer._();
 
-  static const _maxEntries = 200;
+  static const _maxEntries = 500;
 
   final List<AppLogEntry> _entries = [];
 
@@ -44,6 +44,26 @@ class AppLogBuffer extends ChangeNotifier {
 
   List<AppLogEntry> entriesFor(Set<AppLogLevel> levels) {
     return _entries.where((entry) => levels.contains(entry.level)).toList();
+  }
+
+  void debug(String message) {
+    _add(
+      AppLogEntry(
+        level: AppLogLevel.debug,
+        message: message,
+        timestamp: DateTime.now(),
+      ),
+    );
+  }
+
+  void info(String message) {
+    _add(
+      AppLogEntry(
+        level: AppLogLevel.info,
+        message: message,
+        timestamp: DateTime.now(),
+      ),
+    );
   }
 
   void warning(String message) {
@@ -76,7 +96,7 @@ class AppLogBuffer extends ChangeNotifier {
   String formatted(Set<AppLogLevel> levels) {
     final selected = entriesFor(levels);
     if (selected.isEmpty) {
-      return 'No warning or error logs recorded.';
+      return 'No logs recorded.';
     }
     return selected.map((entry) => entry.formatted).join('\n\n');
   }
@@ -90,6 +110,9 @@ class AppLogBuffer extends ChangeNotifier {
     _entries.add(entry);
     if (_entries.length > _maxEntries) {
       _entries.removeRange(0, _entries.length - _maxEntries);
+    }
+    if (kDebugMode) {
+      debugPrint(entry.formatted);
     }
     notifyListeners();
   }

@@ -85,6 +85,7 @@ class NominatimGeocoder implements Geocoder {
       params['bounded'] = '0';
     }
     final uri = Uri.parse(endpoint).replace(queryParameters: params);
+    AppLogBuffer.instance.info('Geocoder query: "$q"');
     try {
       final response = await _client
           .get(uri, headers: {'User-Agent': userAgent})
@@ -97,11 +98,16 @@ class NominatimGeocoder implements Geocoder {
       }
       final decoded = jsonDecode(response.body);
       if (decoded is! List) return const [];
-      return decoded
+      final results = decoded
           .whereType<Map<String, dynamic>>()
           .map(_resultFromJson)
           .whereType<GeocodeResult>()
           .toList(growable: false);
+      AppLogBuffer.instance.info(
+        'Geocoder returned ${results.length} result'
+        '${results.length == 1 ? '' : 's'} for "$q"',
+      );
+      return results;
     } on TimeoutException {
       AppLogBuffer.instance.warning('Geocoder timed out for "$q"');
       return const [];

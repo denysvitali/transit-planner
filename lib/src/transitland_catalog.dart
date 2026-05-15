@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'app_log.dart';
 import 'feed_catalog.dart';
 import 'transitland_api_key.dart';
 
@@ -17,6 +18,7 @@ class TransitlandCatalog extends ChangeNotifier {
   static const String _cacheKey = 'transitland_runtime_feed_catalog_v1';
   static const String _cacheUpdatedKey =
       'transitland_runtime_feed_catalog_updated_at_v1';
+  static const Duration _cacheFreshness = Duration(days: 7);
 
   Future<void>? _loadFuture;
   bool _loading = false;
@@ -51,11 +53,26 @@ class TransitlandCatalog extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     if (!forceRefresh) {
       _loadCached(prefs);
+      if (_loaded && _updatedAt != null) {
+        final age = DateTime.now().toUtc().difference(_updatedAt!);
+        if (age < _cacheFreshness) {
+          AppLogBuffer.instance.info(
+            'Transitland catalog cache hit: ${kTransitFeeds.length} feeds, '
+            'age ${age.inHours}h',
+          );
+          return;
+        }
+      }
     }
 
     _loading = true;
     _error = null;
     notifyListeners();
+    AppLogBuffer.instance.info(
+      forceRefresh
+          ? 'Refreshing Transitland catalog from network'
+          : 'Loading Transitland catalog from network',
+    );
 
     try {
       final apiKey = await loadTransitlandApiKey();
@@ -73,14 +90,22 @@ class TransitlandCatalog extends ChangeNotifier {
         _loaded = true;
         await prefs.setString(_cacheKey, encodeTransitFeeds(fetched));
         await prefs.setString(_cacheUpdatedKey, _updatedAt!.toIso8601String());
+        AppLogBuffer.instance.info(
+          'Transitland catalog loaded: ${fetched.length} feeds',
+        );
       } finally {
         if (createdClient) {
           feedClient.close();
         }
       }
-    } catch (error) {
+    } catch (error, stack) {
       _error = error.toString();
       _loaded = kTransitFeeds.isNotEmpty;
+      AppLogBuffer.instance.error(
+        error,
+        stackTrace: stack,
+        context: 'Transitland catalog load failed',
+      );
     } finally {
       _loading = false;
       notifyListeners();
@@ -90,12 +115,17 @@ class TransitlandCatalog extends ChangeNotifier {
   void _loadCached(SharedPreferences prefs) {
     final cached = prefs.getString(_cacheKey);
     if (cached == null || cached.isEmpty) return;
-    final feeds = decodeTransitFeeds(cached);
+    final feeds = decodeTransitFeeds(
+      cached,
+    ).map(_repairGenericTransitlandFeed).toList(growable: false);
     if (feeds.isEmpty) return;
     replaceTransitFeedsForRuntime(feeds);
     _loaded = true;
     final updated = prefs.getString(_cacheUpdatedKey);
     _updatedAt = updated == null ? null : DateTime.tryParse(updated);
+    AppLogBuffer.instance.info(
+      'Restored cached Transitland catalog: ${feeds.length} feeds',
+    );
     notifyListeners();
   }
 
@@ -195,11 +225,12 @@ TransitFeed? transitFeedFromTransitlandJson(
   if (feedKey.isEmpty) return null;
 
   final publisher = _publisher(json);
-  final name = _stringValue(json['name']).isEmpty
-      ? publisher
-      : _stringValue(json['name']);
+  final name = _displayName(json, feedKey, publisher);
+  final effectivePublisher = _isGenericTransitlandLabel(publisher)
+      ? name
+      : publisher;
   final license = _license(json);
-  final attribution = _attribution(json, publisher, license);
+  final attribution = _attribution(json, effectivePublisher, license);
   final center = _center(json);
   final runtimeId = transitlandRuntimeFeedId(
     onestopId.isEmpty ? 'id-$feedKey' : feedKey,
@@ -211,7 +242,7 @@ TransitFeed? transitFeedFromTransitlandJson(
     description: '$name GTFS feed discovered from Transitland.',
     country: _countryCode(feedKey),
     region: 'Transitland',
-    publisher: publisher,
+    publisher: effectivePublisher,
     license: license,
     sourceUrl: transitlandDownloadUrl(feedKey, baseUrl: baseUrl),
     localFileName: '$runtimeId.zip',
@@ -234,10 +265,27 @@ String _publisher(Map<String, dynamic> json) {
       if (operator is! Map<String, dynamic>) continue;
       final name = _stringValue(operator['name']);
       if (name.isNotEmpty) return name;
+      final nestedOperator = operator['operator'];
+      if (nestedOperator is Map<String, dynamic>) {
+        final nestedName = _stringValue(nestedOperator['name']);
+        if (nestedName.isNotEmpty) return nestedName;
+      }
     }
   }
   final name = _stringValue(json['name']);
-  return name.isEmpty ? 'Transitland' : name;
+  if (_isGenericTransitlandLabel(name)) return '';
+  return name;
+}
+
+String _displayName(
+  Map<String, dynamic> json,
+  String feedKey,
+  String publisher,
+) {
+  final name = _stringValue(json['name']);
+  if (!_isGenericTransitlandLabel(name)) return name;
+  if (!_isGenericTransitlandLabel(publisher)) return publisher;
+  return _fallbackFeedName(json, feedKey);
 }
 
 String _license(Map<String, dynamic> json) {
@@ -321,3 +369,116 @@ String _countryCode(String feedKey) {
 }
 
 String _stringValue(Object? value) => value is String ? value.trim() : '';
+
+bool _isGenericTransitlandLabel(String value) {
+  final normalized = value.trim().toLowerCase();
+  return normalized.isEmpty || normalized == 'transitland';
+}
+
+String _fallbackFeedName(Map<String, dynamic> json, String feedKey) {
+  final fromKey = _nameFromFeedKey(feedKey);
+  if (!_isGenericTransitlandLabel(fromKey)) return fromKey;
+
+  final urls = json['urls'];
+  if (urls is Map<String, dynamic>) {
+    for (final key in const ['static_current', 'gbfs_auto_discovery']) {
+      final fromUrl = _nameFromUrl(_stringValue(urls[key]));
+      if (!_isGenericTransitlandLabel(fromUrl)) return fromUrl;
+    }
+  }
+
+  return 'Transitland feed $feedKey';
+}
+
+String _nameFromFeedKey(String feedKey) {
+  final key = feedKey
+      .toLowerCase()
+      .replaceFirst(RegExp(r'^transitland-'), '')
+      .replaceFirst(RegExp(r'^id-'), '')
+      .replaceFirst(RegExp(r'^f[-~]'), '');
+  var rawParts = key
+      .split(RegExp(r'[-~_]+'))
+      .where((part) => part.isNotEmpty)
+      .toList(growable: false);
+  final country = _countryCode(feedKey).toLowerCase();
+  if (rawParts.length > 1 && rawParts.last == country) {
+    rawParts = rawParts.take(rawParts.length - 1).toList(growable: false);
+  }
+  final parts = rawParts
+      .where((part) => !_looksLikeGeohash(part))
+      .toList(growable: false);
+  final usefulParts = parts.isEmpty ? rawParts : parts;
+  if (usefulParts.isEmpty) return '';
+  return usefulParts.map(_titleCaseIdentifier).join(' ');
+}
+
+bool _looksLikeGeohash(String value) {
+  if (value.length > 8) return false;
+  if (!RegExp(r'^[0-9bcdefghjkmnpqrstuvwxyz]+$').hasMatch(value)) {
+    return false;
+  }
+  return value.length >= 5 || RegExp(r'\d').hasMatch(value);
+}
+
+String _titleCaseIdentifier(String value) {
+  if (value.length <= 4 && RegExp(r'^[a-z0-9]+$').hasMatch(value)) {
+    return value.toUpperCase();
+  }
+  return value
+      .split(RegExp(r'[^a-z0-9]+'))
+      .where((part) => part.isNotEmpty)
+      .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
+      .join(' ');
+}
+
+String _nameFromUrl(String value) {
+  final uri = Uri.tryParse(value);
+  final host = uri?.host ?? '';
+  if (host.isEmpty) return '';
+  final labels = host
+      .replaceFirst(RegExp(r'^www\.'), '')
+      .split('.')
+      .where((label) => label.isNotEmpty)
+      .toList(growable: false);
+  if (labels.isEmpty) return '';
+  final base = labels.length > 2 ? labels[labels.length - 3] : labels.first;
+  return _titleCaseIdentifier(base.replaceAll('-', ' '));
+}
+
+TransitFeed _repairGenericTransitlandFeed(TransitFeed feed) {
+  if (!_isGenericTransitlandLabel(feed.name)) return feed;
+
+  final feedKey = _feedKeyFromTransitFeed(feed);
+  final name = _nameFromFeedKey(feedKey);
+  if (_isGenericTransitlandLabel(name)) return feed;
+
+  return TransitFeed(
+    id: feed.id,
+    name: name,
+    description: '$name GTFS feed discovered from Transitland.',
+    country: feed.country,
+    region: feed.region,
+    publisher: _isGenericTransitlandLabel(feed.publisher)
+        ? name
+        : feed.publisher,
+    license: feed.license,
+    sourceUrl: feed.sourceUrl,
+    localFileName: feed.localFileName,
+    attribution: feed.attribution,
+    centerLatitude: feed.centerLatitude,
+    centerLongitude: feed.centerLongitude,
+    bundledAssetPath: feed.bundledAssetPath,
+    defaultDepartureHour: feed.defaultDepartureHour,
+    componentFeedIds: feed.componentFeedIds,
+  );
+}
+
+String _feedKeyFromTransitFeed(TransitFeed feed) {
+  final sourceUri = Uri.tryParse(feed.sourceUrl);
+  final segments = sourceUri?.pathSegments ?? const <String>[];
+  final feedSegmentIndex = segments.indexOf('feeds');
+  if (feedSegmentIndex >= 0 && feedSegmentIndex + 1 < segments.length) {
+    return Uri.decodeComponent(segments[feedSegmentIndex + 1]);
+  }
+  return feed.id.replaceFirst(RegExp(r'^transitland-'), '');
+}

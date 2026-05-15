@@ -44,6 +44,8 @@ Future<LocalTransitRouter> openFeedRouter(
     );
   }
   int? handle;
+  final openStart = DateTime.now();
+  AppLogBuffer.instance.info('Opening feed ${feed.id} (${feed.name})');
   try {
     onProgress?.call(
       FeedLoadProgress(
@@ -62,6 +64,10 @@ Future<LocalTransitRouter> openFeedRouter(
         componentCount: stagedFeeds.length,
       ),
     );
+    AppLogBuffer.instance.info(
+      'Opening native router for ${feed.id} (${stagedFeeds.length} component'
+      '${stagedFeeds.length == 1 ? '' : 's'})',
+    );
     final openedHandle = await Isolate.run(() => _openNativeFeed(stagedFeeds));
     handle = openedHandle;
     onProgress?.call(
@@ -73,6 +79,11 @@ Future<LocalTransitRouter> openFeedRouter(
       ),
     );
     final stops = await Isolate.run(() => _loadNativeStops(openedHandle));
+    final elapsed = DateTime.now().difference(openStart);
+    AppLogBuffer.instance.info(
+      'Feed ${feed.id} ready: ${stops.length} stops in '
+      '${elapsed.inMilliseconds}ms (handle $openedHandle)',
+    );
     return _GoFfiRouter._(handle: openedHandle, stops: stops);
   } catch (error, stack) {
     final failedHandle = handle;
@@ -172,13 +183,19 @@ Future<String> _stageFeed(
       : '';
   final hasFreshCache = await dst.exists() && existingStamp == expectedStamp;
   if (hasFreshCache) {
+    AppLogBuffer.instance.info('Cache hit for ${feed.id}: ${dst.path}');
     return dst.path;
   }
 
   if (isBundled) {
+    AppLogBuffer.instance.info('Copying bundled feed ${feed.id} to cache');
     await _cacheBundledFeed(feed, dst, stamp, onProgress: report);
   } else {
+    AppLogBuffer.instance.info(
+      'Downloading feed ${feed.id} from ${feed.sourceUrl}',
+    );
     await _downloadFeed(feed, dst, stamp, onProgress: report);
+    AppLogBuffer.instance.info('Download complete for ${feed.id}');
   }
   return dst.path;
 }
@@ -490,11 +507,22 @@ class _GoFfiRouter implements LocalTransitRouter {
       'maxTransfers': request.maxTransfers,
       'routeTypes': _routeTypesForModes(request.modes),
     };
+    final start = DateTime.now();
+    AppLogBuffer.instance.info(
+      'Routing ${request.origin.id} -> ${request.destination.id} '
+      'at ${_formatClock(request.departure)} '
+      '(maxTransfers=${request.maxTransfers}, '
+      'modes=[${request.modes.map((m) => m.name).join(',')}])',
+    );
     final routeResponse = await Isolate.run(() => _routeNative(nativeRequest));
+    final elapsed = DateTime.now().difference(start);
     final error = routeResponse['error'];
     if (error is String && error.isNotEmpty) {
       final exception = FfiRouterException(error);
       if (exception.isDestinationUnreachable) {
+        AppLogBuffer.instance.info(
+          'No route found (destination unreachable) in ${elapsed.inMilliseconds}ms',
+        );
         return const [];
       }
       throw exception;
@@ -502,6 +530,9 @@ class _GoFfiRouter implements LocalTransitRouter {
     final response = routeResponse['response'] as Map<String, dynamic>;
     final legsJson = (response['legs'] as List<dynamic>?) ?? const [];
     if (legsJson.isEmpty) {
+      AppLogBuffer.instance.info(
+        'No itinerary returned in ${elapsed.inMilliseconds}ms',
+      );
       return const [];
     }
     final legs = <ItineraryLeg>[];
@@ -514,7 +545,18 @@ class _GoFfiRouter implements LocalTransitRouter {
       }
     }
     final transfers = (response['transfers'] as num?)?.toInt() ?? 0;
+    AppLogBuffer.instance.info(
+      'Routed in ${elapsed.inMilliseconds}ms: ${legs.length} legs, '
+      '$transfers transfer${transfers == 1 ? '' : 's'}, '
+      '${walking.inMinutes} min walking',
+    );
     return [Itinerary(legs: legs, transfers: transfers, walking: walking)];
+  }
+
+  static String _formatClock(DateTime value) {
+    final h = value.hour.toString().padLeft(2, '0');
+    final m = value.minute.toString().padLeft(2, '0');
+    return '$h:$m';
   }
 
   ItineraryLeg _legFromJson(Map<String, dynamic> json, DateTime sameDayAnchor) {

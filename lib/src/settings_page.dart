@@ -18,7 +18,7 @@ class SettingsPage extends StatelessWidget {
       ..writeln('Active feed: ${selection.feed.id} (${selection.feed.name})')
       ..writeln('Selected feeds: ${selection.selectedFeedIds.join(', ')}')
       ..writeln()
-      ..writeln(AppLogBuffer.instance.formatted(_logLevels));
+      ..writeln(AppLogBuffer.instance.formatted(AppLogLevel.values.toSet()));
     await Clipboard.setData(ClipboardData(text: report.toString().trimRight()));
     if (!context.mounted) return;
     ScaffoldMessenger.of(
@@ -47,17 +47,23 @@ class SettingsPage extends StatelessWidget {
             ListenableBuilder(
               listenable: AppLogBuffer.instance,
               builder: (context, _) {
-                final logCount = AppLogBuffer.instance
-                    .entriesFor(_logLevels)
+                final entries = AppLogBuffer.instance.entries;
+                final warnErr = entries
+                    .where(
+                      (e) =>
+                          e.level == AppLogLevel.warning ||
+                          e.level == AppLogLevel.error,
+                    )
                     .length;
                 return ListTile(
                   leading: const Icon(Icons.article_outlined),
                   title: const Text('Logs'),
                   subtitle: Text(
-                    logCount == 0
-                        ? 'No warning or error logs'
-                        : '$logCount warning or error log'
-                              '${logCount == 1 ? '' : 's'}',
+                    entries.isEmpty
+                        ? 'No logs yet'
+                        : '${entries.length} log entr'
+                              '${entries.length == 1 ? 'y' : 'ies'}'
+                              '${warnErr == 0 ? '' : ' • $warnErr warning/error'}',
                   ),
                   trailing: const Icon(Icons.chevron_right),
                   contentPadding: EdgeInsets.zero,
@@ -81,76 +87,150 @@ class SettingsPage extends StatelessWidget {
   }
 }
 
-class LogsPage extends StatelessWidget {
+class LogsPage extends StatefulWidget {
   const LogsPage({super.key});
 
-  Future<void> _copyLogs(BuildContext context) async {
+  @override
+  State<LogsPage> createState() => _LogsPageState();
+}
+
+class _LogsPageState extends State<LogsPage> {
+  final Set<AppLogLevel> _enabledLevels = {
+    AppLogLevel.info,
+    AppLogLevel.warning,
+    AppLogLevel.error,
+  };
+  bool _newestFirst = true;
+
+  Future<void> _copyLogs() async {
     await Clipboard.setData(
-      ClipboardData(text: AppLogBuffer.instance.formatted(_logLevels)),
+      ClipboardData(text: AppLogBuffer.instance.formatted(_enabledLevels)),
     );
-    if (!context.mounted) {
-      return;
-    }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Warning and error logs copied')),
-    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Logs copied')));
+  }
+
+  void _toggleLevel(AppLogLevel level, bool selected) {
+    setState(() {
+      if (selected) {
+        _enabledLevels.add(level);
+      } else {
+        _enabledLevels.remove(level);
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Logs')),
+      appBar: AppBar(
+        title: const Text('Logs'),
+        actions: [
+          IconButton(
+            tooltip: _newestFirst ? 'Show oldest first' : 'Show newest first',
+            icon: Icon(
+              _newestFirst ? Icons.arrow_downward : Icons.arrow_upward,
+            ),
+            onPressed: () => setState(() => _newestFirst = !_newestFirst),
+          ),
+        ],
+      ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(AppSpacing.m),
-          children: [
-            ListenableBuilder(
-              listenable: AppLogBuffer.instance,
-              builder: (context, _) {
-                final logs = AppLogBuffer.instance.entriesFor(_logLevels);
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: ListenableBuilder(
+          listenable: AppLogBuffer.instance,
+          builder: (context, _) {
+            final all = AppLogBuffer.instance.entries;
+            final counts = <AppLogLevel, int>{
+              for (final level in AppLogLevel.values) level: 0,
+            };
+            for (final entry in all) {
+              counts[entry.level] = (counts[entry.level] ?? 0) + 1;
+            }
+            final filtered = all
+                .where((e) => _enabledLevels.contains(e.level))
+                .toList(growable: false);
+            final ordered = _newestFirst
+                ? filtered.reversed.toList(growable: false)
+                : filtered;
+            return ListView(
+              padding: const EdgeInsets.all(AppSpacing.m),
+              children: [
+                Wrap(
+                  spacing: AppSpacing.xs,
+                  runSpacing: AppSpacing.xs,
                   children: [
-                    Wrap(
-                      spacing: AppSpacing.s,
-                      runSpacing: AppSpacing.s,
-                      children: [
-                        FilledButton.icon(
-                          onPressed: () => _copyLogs(context),
-                          icon: const Icon(Icons.copy_all_outlined),
-                          label: const Text('Copy warnings and errors'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: logs.isEmpty
-                              ? null
-                              : AppLogBuffer.instance.clear,
-                          icon: const Icon(Icons.delete_sweep_outlined),
-                          label: const Text('Clear logs'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.m),
-                    if (logs.isEmpty)
-                      const _EmptyLogState()
-                    else
-                      ...logs.map(
-                        (entry) => Padding(
-                          padding: const EdgeInsets.only(bottom: AppSpacing.s),
-                          child: _LogEntryTile(entry: entry),
-                        ),
+                    for (final level in AppLogLevel.values)
+                      FilterChip(
+                        selected: _enabledLevels.contains(level),
+                        label: Text('${_levelLabel(level)} (${counts[level]})'),
+                        avatar: Icon(_levelIcon(level), size: 18),
+                        onSelected: (s) => _toggleLevel(level, s),
                       ),
                   ],
-                );
-              },
-            ),
-          ],
+                ),
+                const SizedBox(height: AppSpacing.s),
+                Wrap(
+                  spacing: AppSpacing.s,
+                  runSpacing: AppSpacing.s,
+                  children: [
+                    FilledButton.icon(
+                      onPressed: filtered.isEmpty ? null : _copyLogs,
+                      icon: const Icon(Icons.copy_all_outlined),
+                      label: const Text('Copy filtered logs'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: all.isEmpty
+                          ? null
+                          : AppLogBuffer.instance.clear,
+                      icon: const Icon(Icons.delete_sweep_outlined),
+                      label: const Text('Clear logs'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.m),
+                if (all.isEmpty)
+                  const _EmptyLogState(
+                    title: 'No logs yet',
+                    detail: 'Activity will appear here as you use the app.',
+                  )
+                else if (ordered.isEmpty)
+                  _EmptyLogState(
+                    title: 'No logs match the current filter',
+                    detail:
+                        '${all.length} entr${all.length == 1 ? 'y is' : 'ies are'} '
+                        'hidden. Toggle a chip above to show them.',
+                  )
+                else
+                  ...ordered.map(
+                    (entry) => Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.s),
+                      child: _LogEntryTile(entry: entry),
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
       ),
     );
   }
 }
 
-const _logLevels = {AppLogLevel.warning, AppLogLevel.error};
+String _levelLabel(AppLogLevel level) => switch (level) {
+  AppLogLevel.debug => 'Debug',
+  AppLogLevel.info => 'Info',
+  AppLogLevel.warning => 'Warnings',
+  AppLogLevel.error => 'Errors',
+};
+
+IconData _levelIcon(AppLogLevel level) => switch (level) {
+  AppLogLevel.debug => Icons.bug_report_outlined,
+  AppLogLevel.info => Icons.info_outline,
+  AppLogLevel.warning => Icons.warning_amber_outlined,
+  AppLogLevel.error => Icons.error_outline,
+};
 
 class _NetworkSection extends StatefulWidget {
   const _NetworkSection();
@@ -446,7 +526,10 @@ class _AboutSection extends StatelessWidget {
 }
 
 class _EmptyLogState extends StatelessWidget {
-  const _EmptyLogState();
+  const _EmptyLogState({required this.title, required this.detail});
+
+  final String title;
+  final String detail;
 
   @override
   Widget build(BuildContext context) {
@@ -461,7 +544,15 @@ class _EmptyLogState extends StatelessWidget {
             size: 32,
           ),
           const SizedBox(height: AppSpacing.s),
-          Text('No warning or error logs', style: theme.textTheme.titleMedium),
+          Text(title, style: theme.textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            detail,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+          ),
         ],
       ),
     );
@@ -477,6 +568,8 @@ class _LogEntryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final color = switch (entry.level) {
+      AppLogLevel.debug => theme.colorScheme.outline,
+      AppLogLevel.info => theme.colorScheme.primary,
       AppLogLevel.warning => theme.colorScheme.tertiary,
       AppLogLevel.error => theme.colorScheme.error,
     };
@@ -491,23 +584,28 @@ class _LogEntryTile extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              entry.level == AppLogLevel.warning
-                  ? Icons.warning_amber_outlined
-                  : Icons.error_outline,
-              color: color,
-            ),
+            Icon(_levelIcon(entry.level), color: color),
             const SizedBox(width: AppSpacing.s),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${entry.level.name.toUpperCase()} ${_clock(entry.timestamp)}',
+                    '${entry.level.name.toUpperCase()} ${_logClock(entry.timestamp)}',
                     style: theme.textTheme.labelLarge?.copyWith(color: color),
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   SelectableText(entry.message),
+                  if (entry.stackTrace != null) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    SelectableText(
+                      entry.stackTrace.toString(),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontFamily: 'monospace',
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -518,8 +616,9 @@ class _LogEntryTile extends StatelessWidget {
   }
 }
 
-String _clock(DateTime value) {
+String _logClock(DateTime value) {
   final h = value.hour.toString().padLeft(2, '0');
   final m = value.minute.toString().padLeft(2, '0');
-  return '$h:$m';
+  final s = value.second.toString().padLeft(2, '0');
+  return '$h:$m:$s';
 }
