@@ -29,6 +29,12 @@ import 'transitland_api_key.dart';
 
 const String _kFeedCacheDir = 'gtfs';
 
+/// Maximum number of feeds staged (downloaded or copied) in parallel.
+/// Browsers cap at 6 connections per origin and most feeds share the
+/// Transitland host, so going much higher risks rate-limiting without
+/// further speedup. Keeps RAM and socket usage bounded on mobile too.
+const int _kMaxConcurrentStaging = 6;
+
 Future<LocalTransitRouter> openToeiRouter({
   void Function(FeedLoadProgress progress)? onProgress,
 }) async =>
@@ -124,18 +130,74 @@ Future<List<_StagedFeed>> _stageFeeds(
     return [_StagedFeed(path: path)];
   }
 
-  final staged = <_StagedFeed>[];
-  for (var i = 0; i < components.length; i++) {
-    final component = components[i];
+  final total = components.length;
+  var completed = 0;
+
+  void forwardProgress(FeedLoadProgress raw) {
+    onProgress?.call(
+      FeedLoadProgress(
+        feed: raw.feed,
+        operation: raw.operation,
+        componentIndex: (completed + 1).clamp(1, total),
+        componentCount: total,
+        bytesReceived: raw.bytesReceived,
+        totalBytes: raw.totalBytes,
+      ),
+    );
+  }
+
+  Future<_StagedFeed> stageOne(TransitFeed component) async {
     final path = await _stageFeed(
       component,
-      componentIndex: i + 1,
-      componentCount: components.length,
-      onProgress: onProgress,
+      componentIndex: 0,
+      componentCount: total,
+      onProgress: forwardProgress,
     );
-    staged.add(_StagedFeed(prefix: component.id, path: path));
+    completed++;
+    // Emit a tick so the UI's completed count advances even when no
+    // other feed is mid-flight to push a new progress event.
+    forwardProgress(
+      FeedLoadProgress(
+        feed: component,
+        operation: FeedLoadOperation.checkingCache,
+        componentIndex: 0,
+        componentCount: total,
+      ),
+    );
+    return _StagedFeed(prefix: component.id, path: path);
   }
-  return staged;
+
+  return _runWithConcurrency<_StagedFeed>(
+    [for (final c in components) () => stageOne(c)],
+    _kMaxConcurrentStaging,
+  );
+}
+
+/// Runs [tasks] with at most [maxConcurrent] in flight at once. Results
+/// are returned in the same order as [tasks]. If any task throws, the
+/// remaining tasks are still allowed to finish (Future.wait surfaces the
+/// first error after that).
+Future<List<T>> _runWithConcurrency<T>(
+  List<Future<T> Function()> tasks,
+  int maxConcurrent,
+) async {
+  if (tasks.isEmpty) return <T>[];
+  final results = List<T?>.filled(tasks.length, null);
+  var next = 0;
+
+  Future<void> worker() async {
+    while (true) {
+      final i = next++;
+      if (i >= tasks.length) return;
+      results[i] = await tasks[i]();
+    }
+  }
+
+  final workerCount = tasks.length < maxConcurrent
+      ? tasks.length
+      : maxConcurrent;
+  await Future.wait([for (var i = 0; i < workerCount; i++) worker()]);
+  return results.cast<T>();
 }
 
 /// Stages a single feed into app cache.
