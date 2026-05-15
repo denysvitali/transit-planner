@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"os"
@@ -139,4 +140,52 @@ func TestTransitlandFeedsRequestUsesHeaderAuthAndLicenseFilters(t *testing.T) {
 			t.Fatalf("%s = %q, want %q", key, got, want)
 		}
 	}
+}
+
+func TestTransitlandFeedMatchesCountryBBoxRejectsOversizedFeeds(t *testing.T) {
+	ch := transitlandCountryBBoxes["CH"]
+	local := transitlandFeedWithPolygon([][]float64{
+		{7.0, 46.0},
+		{8.0, 46.0},
+		{8.0, 47.0},
+		{7.0, 47.0},
+		{7.0, 46.0},
+	})
+	europeWide := transitlandFeedWithPolygon([][]float64{
+		{-9.0, 38.0},
+		{23.0, 38.0},
+		{23.0, 54.0},
+		{-9.0, 54.0},
+		{-9.0, 38.0},
+	})
+	outside := transitlandFeedWithPolygon([][]float64{
+		{11.0, 45.7},
+		{12.0, 45.7},
+		{12.0, 46.4},
+		{11.0, 46.4},
+		{11.0, 45.7},
+	})
+
+	if !transitlandFeedMatchesCountryBBox(local, ch) {
+		t.Fatal("expected local Swiss-like feed to match CH bbox")
+	}
+	if transitlandFeedMatchesCountryBBox(europeWide, ch) {
+		t.Fatal("expected oversized European feed to be rejected")
+	}
+	if transitlandFeedMatchesCountryBBox(outside, ch) {
+		t.Fatal("expected feed centered outside CH bbox to be rejected")
+	}
+}
+
+func transitlandFeedWithPolygon(points [][]float64) transitlandFeed {
+	coordinates, err := json.Marshal([][][]float64{points})
+	if err != nil {
+		panic(err)
+	}
+	var feed transitlandFeed
+	feed.FeedState.FeedVersion.Geometry = transitlandGeometry{
+		Type:        "Polygon",
+		Coordinates: coordinates,
+	}
+	return feed
 }

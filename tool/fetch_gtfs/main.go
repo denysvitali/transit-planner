@@ -353,9 +353,14 @@ type transitlandFeedsResponse struct {
 }
 
 type transitlandFeed struct {
-	ID                  int    `json:"id"`
-	OnestopID           string `json:"onestop_id"`
-	Name                string `json:"name"`
+	ID        int    `json:"id"`
+	OnestopID string `json:"onestop_id"`
+	Name      string `json:"name"`
+	FeedState struct {
+		FeedVersion struct {
+			Geometry transitlandGeometry `json:"geometry"`
+		} `json:"feed_version"`
+	} `json:"feed_state"`
 	AssociatedOperators []struct {
 		Name string `json:"name"`
 	} `json:"associated_operators"`
@@ -368,6 +373,11 @@ type transitlandFeed struct {
 		CreateDerived      string `json:"create_derived_product"`
 		ShareAlikeOptional string `json:"share_alike_optional"`
 	} `json:"license"`
+}
+
+type transitlandGeometry struct {
+	Type        string          `json:"type"`
+	Coordinates json.RawMessage `json:"coordinates"`
 }
 
 func fetchTransitlandFeedSpecs(country, apiKey, baseURL string) ([]catalog.FeedSpec, error) {
@@ -397,6 +407,9 @@ func fetchTransitlandFeedSpecs(country, apiKey, baseURL string) ([]catalog.FeedS
 			return nil, err
 		}
 		for _, feed := range parsed.Feeds {
+			if !transitlandFeedMatchesCountryBBox(feed, bbox) {
+				continue
+			}
 			spec, ok := transitlandFeedSpec(country, baseURL, feed)
 			if !ok || seen[spec.ID] {
 				continue
@@ -411,6 +424,73 @@ func fetchTransitlandFeedSpecs(country, apiKey, baseURL string) ([]catalog.FeedS
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
+}
+
+func transitlandFeedMatchesCountryBBox(feed transitlandFeed, country countryBBox) bool {
+	bounds, ok := transitlandGeometryBounds(feed.FeedState.FeedVersion.Geometry)
+	if !ok || !bounds.intersects(country) {
+		return false
+	}
+	width := country.maxLon - country.minLon
+	height := country.maxLat - country.minLat
+	if bounds.maxLon-bounds.minLon > width*2 || bounds.maxLat-bounds.minLat > height*2 {
+		return false
+	}
+	centerLon := (bounds.minLon + bounds.maxLon) / 2
+	centerLat := (bounds.minLat + bounds.maxLat) / 2
+	return centerLon >= country.minLon && centerLon <= country.maxLon &&
+		centerLat >= country.minLat && centerLat <= country.maxLat
+}
+
+func transitlandGeometryBounds(geometry transitlandGeometry) (countryBBox, bool) {
+	if len(geometry.Coordinates) == 0 {
+		return countryBBox{}, false
+	}
+	var coordinates any
+	if err := json.Unmarshal(geometry.Coordinates, &coordinates); err != nil {
+		return countryBBox{}, false
+	}
+	bounds := countryBBox{minLon: 180, minLat: 90, maxLon: -180, maxLat: -90}
+	var anyPoint bool
+	visitCoordinatePairs(coordinates, func(lon, lat float64) {
+		anyPoint = true
+		if lon < bounds.minLon {
+			bounds.minLon = lon
+		}
+		if lon > bounds.maxLon {
+			bounds.maxLon = lon
+		}
+		if lat < bounds.minLat {
+			bounds.minLat = lat
+		}
+		if lat > bounds.maxLat {
+			bounds.maxLat = lat
+		}
+	})
+	return bounds, anyPoint
+}
+
+func visitCoordinatePairs(value any, visit func(lon, lat float64)) {
+	items, ok := value.([]any)
+	if !ok {
+		return
+	}
+	if len(items) >= 2 {
+		lon, lonOK := items[0].(float64)
+		lat, latOK := items[1].(float64)
+		if lonOK && latOK {
+			visit(lon, lat)
+			return
+		}
+	}
+	for _, item := range items {
+		visitCoordinatePairs(item, visit)
+	}
+}
+
+func (bbox countryBBox) intersects(other countryBBox) bool {
+	return bbox.minLon <= other.maxLon && bbox.maxLon >= other.minLon &&
+		bbox.minLat <= other.maxLat && bbox.maxLat >= other.minLat
 }
 
 func transitlandFeedsRequest(baseURL, apiKey string, bbox countryBBox, after int) (*http.Request, error) {
