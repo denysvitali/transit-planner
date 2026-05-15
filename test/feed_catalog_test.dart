@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:transit_planner/src/feed_catalog.dart';
 import 'package:transit_planner/src/transitland_catalog.dart';
@@ -105,10 +107,32 @@ void main() {
 
       await TransitlandCatalog.instance.load();
 
-      expect(kTransitFeeds.single.name, 'Caltrain');
-      expect(kTransitFeeds.single.description, contains('Caltrain GTFS feed'));
+      final caltrain = findFeedById('transitland-f-9q9-caltrain');
+      expect(caltrain, isNotNull);
+      expect(caltrain!.name, 'Caltrain');
+      expect(caltrain.description, contains('Caltrain GTFS feed'));
     },
   );
+
+  test('catalog includes supplemental Kanazawa Flat Bus feed', () async {
+    SharedPreferences.setMockInitialValues({});
+
+    await TransitlandCatalog.instance.load(
+      forceRefresh: true,
+      client: TransitlandFeedClient(
+        httpClient: MockClient(
+          (_) async => http.Response('{"feeds":[],"meta":{"after":0}}', 200),
+        ),
+      ),
+    );
+
+    final feed = findFeedById('supplemental-kanazawa-flatbus');
+    expect(feed, isNotNull);
+    expect(feed!.name, 'Kanazawa Flat Bus');
+    expect(feed.country, 'JP');
+    expect(feed.region, 'Ishikawa');
+    expect(feed.sourceUrl, contains('flatbus20260401.zip'));
+  });
 
   test('Transitland discovery URI uses license filters', () {
     final uri = transitlandFeedsUri(after: 42);

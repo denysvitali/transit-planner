@@ -85,13 +85,14 @@ class TransitlandCatalog extends ChangeNotifier {
       final feedClient = client ?? TransitlandFeedClient();
       try {
         final fetched = await feedClient.fetchFeeds(apiKey: apiKey);
-        replaceTransitFeedsForRuntime(fetched);
+        final feeds = _withSupplementalFeeds(fetched);
+        replaceTransitFeedsForRuntime(feeds);
         _updatedAt = DateTime.now().toUtc();
         _loaded = true;
-        await prefs.setString(_cacheKey, encodeTransitFeeds(fetched));
+        await prefs.setString(_cacheKey, encodeTransitFeeds(feeds));
         await prefs.setString(_cacheUpdatedKey, _updatedAt!.toIso8601String());
         AppLogBuffer.instance.info(
-          'Transitland catalog loaded: ${fetched.length} feeds',
+          'Transitland catalog loaded: ${feeds.length} feeds',
         );
       } finally {
         if (createdClient) {
@@ -100,6 +101,9 @@ class TransitlandCatalog extends ChangeNotifier {
       }
     } catch (error, stack) {
       _error = error.toString();
+      if (kTransitFeeds.isEmpty) {
+        replaceTransitFeedsForRuntime(_withSupplementalFeeds(const []));
+      }
       _loaded = kTransitFeeds.isNotEmpty;
       AppLogBuffer.instance.error(
         error,
@@ -115,16 +119,15 @@ class TransitlandCatalog extends ChangeNotifier {
   void _loadCached(SharedPreferences prefs) {
     final cached = prefs.getString(_cacheKey);
     if (cached == null || cached.isEmpty) return;
-    final feeds = decodeTransitFeeds(
-      cached,
-    ).map(_repairGenericTransitlandFeed).toList(growable: false);
-    if (feeds.isEmpty) return;
-    replaceTransitFeedsForRuntime(feeds);
+    final feeds = decodeTransitFeeds(cached).map(_repairGenericTransitlandFeed);
+    final repaired = _withSupplementalFeeds(feeds);
+    if (repaired.isEmpty) return;
+    replaceTransitFeedsForRuntime(repaired);
     _loaded = true;
     final updated = prefs.getString(_cacheUpdatedKey);
     _updatedAt = updated == null ? null : DateTime.tryParse(updated);
     AppLogBuffer.instance.info(
-      'Restored cached Transitland catalog: ${feeds.length} feeds',
+      'Restored cached Transitland catalog: ${repaired.length} feeds',
     );
     notifyListeners();
   }
@@ -139,6 +142,34 @@ class TransitlandCatalog extends ChangeNotifier {
     notifyListeners();
   }
 }
+
+List<TransitFeed> _withSupplementalFeeds(Iterable<TransitFeed> feeds) {
+  final byID = <String, TransitFeed>{for (final feed in feeds) feed.id: feed};
+  for (final feed in _supplementalTransitFeeds) {
+    byID.putIfAbsent(feed.id, () => feed);
+  }
+  return byID.values.toList(growable: false);
+}
+
+const List<TransitFeed> _supplementalTransitFeeds = [
+  TransitFeed(
+    id: 'supplemental-kanazawa-flatbus',
+    name: 'Kanazawa Flat Bus',
+    description:
+        'Kanazawa City Flat Bus GTFS feed from the city open data catalog.',
+    country: 'JP',
+    region: 'Ishikawa',
+    publisher: 'Kanazawa City',
+    license: 'CC BY 4.0',
+    sourceUrl:
+        'https://catalog-data.city.kanazawa.ishikawa.jp/dataset/1196beb4-f9f9-463c-9723-5b38d8127425/resource/9636cac5-1449-4656-893b-ec98d834eb23/download/flatbus20260401.zip',
+    localFileName: 'kanazawa-flatbus.zip',
+    attribution: 'Kanazawa City open data, CC BY 4.0.',
+    centerLatitude: 36.5613,
+    centerLongitude: 136.6562,
+    defaultDepartureHour: 9,
+  ),
+];
 
 class TransitlandFeedClient {
   TransitlandFeedClient({
@@ -170,9 +201,7 @@ class TransitlandFeedClient {
           break;
         } on http.ClientException {
           if (attempt == maxRetries - 1) rethrow;
-          await Future.delayed(
-            Duration(milliseconds: 500 * (attempt + 1)),
-          );
+          await Future.delayed(Duration(milliseconds: 500 * (attempt + 1)));
         }
       }
       if (response == null) {
