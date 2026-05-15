@@ -14,6 +14,8 @@ class FeedSelectionPage extends StatefulWidget {
 
 class _FeedSelectionPageState extends State<FeedSelectionPage> {
   final Set<String> _expandedCountries = {};
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
 
   @override
   void initState() {
@@ -22,6 +24,12 @@ class _FeedSelectionPageState extends State<FeedSelectionPage> {
     if (!catalog.hasLoaded && !catalog.isLoading) {
       catalog.load();
     }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   void _toggleCountry(String country) {
@@ -48,9 +56,23 @@ class _FeedSelectionPageState extends State<FeedSelectionPage> {
                 icon: const Icon(Icons.sync),
                 onPressed: catalog.isLoading
                     ? null
-                    : () => TransitlandCatalog.instance.load(
-                        forceRefresh: true,
-                      ),
+                    : () =>
+                          TransitlandCatalog.instance.load(forceRefresh: true),
+              );
+            },
+          ),
+          ListenableBuilder(
+            listenable: NetworkSelection.instance,
+            builder: (context, _) {
+              final hasSelection =
+                  NetworkSelection.instance.selectedFeedIds.isNotEmpty;
+              return IconButton(
+                tooltip: 'Clear selection',
+                icon: const Icon(Icons.clear_all),
+                onPressed: hasSelection
+                    ? () =>
+                          NetworkSelection.instance.setSelectedFeedIds(const [])
+                    : null,
               );
             },
           ),
@@ -68,7 +90,7 @@ class _FeedSelectionPageState extends State<FeedSelectionPage> {
                 listenable: TransitlandCatalog.instance,
                 builder: (context, _) {
                   final catalog = TransitlandCatalog.instance;
-                  final groupedFeeds = _groupedSelectableFeeds();
+                  final groupedFeeds = _groupedSelectableFeeds(_query);
 
                   if (catalog.isLoading && groupedFeeds.isEmpty) {
                     return const SliverToBoxAdapter(
@@ -99,24 +121,46 @@ class _FeedSelectionPageState extends State<FeedSelectionPage> {
                       children: [
                         Text(
                           _catalogStatus(catalog),
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                               ),
                         ),
                         if (catalog.error != null) ...[
                           const SizedBox(height: AppSpacing.xs),
                           Text(
                             catalog.error!,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
+                            style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(
                                   color: Theme.of(context).colorScheme.error,
                                 ),
                           ),
                         ],
+                        const SizedBox(height: AppSpacing.s),
+                        TextField(
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: _query.isEmpty
+                                ? null
+                                : IconButton(
+                                    tooltip: 'Clear search',
+                                    icon: const Icon(Icons.close),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() => _query = '');
+                                    },
+                                  ),
+                            hintText: 'Search feeds',
+                            border: const OutlineInputBorder(),
+                          ),
+                          textInputAction: TextInputAction.search,
+                          onChanged: (value) {
+                            setState(() => _query = value.trim());
+                          },
+                        ),
                         const SizedBox(height: AppSpacing.s),
                       ],
                     ),
@@ -129,25 +173,22 @@ class _FeedSelectionPageState extends State<FeedSelectionPage> {
               sliver: ListenableBuilder(
                 listenable: TransitlandCatalog.instance,
                 builder: (context, _) {
-                  final groupedFeeds = _groupedSelectableFeeds();
+                  final groupedFeeds = _groupedSelectableFeeds(_query);
                   if (groupedFeeds.isEmpty) {
                     return const SliverToBoxAdapter(child: SizedBox.shrink());
                   }
                   return SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final country = groupedFeeds.keys.elementAt(index);
-                        final regions = groupedFeeds[country]!;
-                        final isExpanded = _expandedCountries.contains(country);
-                        return _CountrySection(
-                          country: country,
-                          regions: regions,
-                          isExpanded: isExpanded,
-                          onToggleExpanded: () => _toggleCountry(country),
-                        );
-                      },
-                      childCount: groupedFeeds.length,
-                    ),
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final country = groupedFeeds.keys.elementAt(index);
+                      final regions = groupedFeeds[country]!;
+                      final isExpanded = _expandedCountries.contains(country);
+                      return _CountrySection(
+                        country: country,
+                        regions: regions,
+                        isExpanded: isExpanded,
+                        onToggleExpanded: () => _toggleCountry(country),
+                      );
+                    }, childCount: groupedFeeds.length),
                   );
                 },
               ),
@@ -190,21 +231,17 @@ class _CountrySection extends StatelessWidget {
               leading: Checkbox(
                 tristate: true,
                 value: value,
-                onChanged: (value) => NetworkSelection.instance.setFeedsSelected(
-                  feedIds,
-                  value ?? true,
-                ),
+                onChanged: (value) => NetworkSelection.instance
+                    .setFeedsSelected(feedIds, value ?? true),
               ),
               title: Text(
                 _countryLabel(country),
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
               trailing: IconButton(
-                icon: Icon(
-                  isExpanded ? Icons.expand_less : Icons.expand_more,
-                ),
+                icon: Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
                 onPressed: onToggleExpanded,
               ),
               onTap: onToggleExpanded,
@@ -229,13 +266,11 @@ class _CountrySection extends StatelessWidget {
                   title: Text(
                     regionEntry.key,
                     style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
-                  onChanged: (value) => NetworkSelection.instance.setFeedsSelected(
-                    feedIds,
-                    value ?? true,
-                  ),
+                  onChanged: (value) => NetworkSelection.instance
+                      .setFeedsSelected(feedIds, value ?? true),
                 );
               },
             ),
@@ -251,10 +286,8 @@ class _CountrySection extends StatelessWidget {
                     title: Text(feed.name),
                     subtitle: Text(feed.description),
                     secondary: const Icon(Icons.public),
-                    onChanged: (value) => NetworkSelection.instance.setFeedSelected(
-                      feed.id,
-                      value ?? false,
-                    ),
+                    onChanged: (value) => NetworkSelection.instance
+                        .setFeedSelected(feed.id, value ?? false),
                   );
                 },
               ),
@@ -282,11 +315,17 @@ String _catalogStatus(TransitlandCatalog catalog) {
   return 'Loaded feeds: $count | Updated ${updatedAt.toLocal()}';
 }
 
-Map<String, Map<String, List<TransitFeed>>> _groupedSelectableFeeds() {
+Map<String, Map<String, List<TransitFeed>>> _groupedSelectableFeeds(
+  String query,
+) {
+  final normalizedQuery = query.trim().toLowerCase();
   final grouped = <String, Map<String, List<TransitFeed>>>{};
   for (final feed in selectableTransitFeeds().where(
     (feed) => !feed.isCollection,
   )) {
+    if (normalizedQuery.isNotEmpty && !_matchesFeed(feed, normalizedQuery)) {
+      continue;
+    }
     final country = feed.country.isEmpty ? 'Other' : feed.country;
     final region = feed.region.isEmpty ? 'Other' : feed.region;
     grouped.putIfAbsent(country, () => <String, List<TransitFeed>>{});
@@ -308,6 +347,14 @@ Map<String, Map<String, List<TransitFeed>>> _groupedSelectableFeeds() {
           region: grouped[country]![region]!,
       },
   };
+}
+
+bool _matchesFeed(TransitFeed feed, String query) {
+  return feed.name.toLowerCase().contains(query) ||
+      feed.description.toLowerCase().contains(query) ||
+      feed.region.toLowerCase().contains(query) ||
+      feed.country.toLowerCase().contains(query) ||
+      feed.id.toLowerCase().contains(query);
 }
 
 Iterable<String> _feedIdsForCountry(Map<String, List<TransitFeed>> regions) =>

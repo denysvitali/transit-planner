@@ -82,8 +82,9 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _bootstrap() async {
+    final seq = _feedOpenSeq;
     await NetworkSelection.instance.load();
-    if (!mounted) return;
+    if (!mounted || _feedOpenSeq != seq) return;
     await _openFeed(NetworkSelection.instance.feed);
   }
 
