@@ -403,6 +403,71 @@ func TestHandleLifecycle(t *testing.T) {
 	}
 }
 
+// TestOpenJSONSkipsBrokenMergedFeeds proves that one broken feed in a merged
+// open request doesn't take down the whole network — the survivors load and
+// the broken one shows up under "skipped".
+func TestOpenJSONSkipsBrokenMergedFeeds(t *testing.T) {
+	goodDir := writeMiniFeed(t)
+	brokenDir := t.TempDir() // intentionally empty: missing stops.txt
+
+	openReq, _ := json.Marshal(openRequest{Feeds: []feedSource{
+		{Prefix: "good", FeedDir: goodDir},
+		{Prefix: "broken", FeedDir: brokenDir},
+	}})
+	raw := OpenJSON(string(openReq))
+
+	var maybeErr errorResponse
+	if err := json.Unmarshal([]byte(raw), &maybeErr); err == nil && maybeErr.Error != "" {
+		t.Fatalf("OpenJSON returned error: %s", maybeErr.Error)
+	}
+	var resp openResponse
+	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
+		t.Fatalf("unmarshal: %v (raw=%s)", err, raw)
+	}
+	if resp.Handle == 0 {
+		t.Fatalf("expected non-zero handle, got: %s", raw)
+	}
+	t.Cleanup(func() {
+		closeReq, _ := json.Marshal(closeRequest{Handle: resp.Handle})
+		CloseJSON(string(closeReq))
+	})
+	if len(resp.Skipped) != 1 || resp.Skipped[0].Prefix != "broken" || resp.Skipped[0].Error == "" {
+		t.Fatalf("skipped = %#v, want one entry for 'broken'", resp.Skipped)
+	}
+
+	// The surviving feed must be routable through the returned handle.
+	routeReq, _ := json.Marshal(routeRequest{
+		Handle:    resp.Handle,
+		From:      "good:A",
+		To:        "good:B",
+		Departure: 7*3600 + 55*60,
+	})
+	var route routeResponse
+	if err := json.Unmarshal([]byte(RouteJSON(string(routeReq))), &route); err != nil {
+		t.Fatalf("unmarshal route: %v", err)
+	}
+	if len(route.Legs) == 0 {
+		t.Fatal("expected at least one leg from the surviving feed")
+	}
+}
+
+// TestOpenJSONFailsWhenAllMergedFeedsBroken ensures the all-broken case still
+// surfaces as a hard error rather than silently returning an empty network.
+func TestOpenJSONFailsWhenAllMergedFeedsBroken(t *testing.T) {
+	openReq, _ := json.Marshal(openRequest{Feeds: []feedSource{
+		{Prefix: "a", FeedDir: t.TempDir()},
+		{Prefix: "b", FeedDir: t.TempDir()},
+	}})
+	raw := OpenJSON(string(openReq))
+	var resp errorResponse
+	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Error == "" {
+		t.Fatalf("expected error when every merged feed fails, got: %s", raw)
+	}
+}
+
 func TestRouteJSONRejectsBothFeedSources(t *testing.T) {
 	req := routeRequest{
 		FeedDir: "/tmp/whatever",

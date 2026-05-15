@@ -74,8 +74,21 @@ Future<LocalTransitRouter> openFeedRouter(
       'Opening native router for ${feed.id} (${stagedFeeds.length} component'
       '${stagedFeeds.length == 1 ? '' : 's'})',
     );
-    final openedHandle = await Isolate.run(() => _openNativeFeed(stagedFeeds));
+    final openResult = await Isolate.run(() => _openNativeFeed(stagedFeeds));
+    final openedHandle = openResult.handle;
     handle = openedHandle;
+    for (final skip in openResult.skipped) {
+      AppLogBuffer.instance.warning(
+        'Native router skipped feed ${skip.prefix}: ${skip.error}',
+      );
+    }
+    if (openResult.skipped.isNotEmpty) {
+      final loaded = stagedFeeds.length - openResult.skipped.length;
+      AppLogBuffer.instance.warning(
+        'Native router merged $loaded/${stagedFeeds.length} feeds for '
+        '${feed.id} (${openResult.skipped.length} skipped due to parse errors)',
+      );
+    }
     onProgress?.call(
       FeedLoadProgress(
         feed: feed,
@@ -412,7 +425,21 @@ class _StagedFeed {
   final String? prefix;
 }
 
-int _openNativeFeed(List<_StagedFeed> stagedFeeds) =>
+class _OpenResult {
+  const _OpenResult({required this.handle, required this.skipped});
+
+  final int handle;
+  final List<_SkippedFeed> skipped;
+}
+
+class _SkippedFeed {
+  const _SkippedFeed({required this.prefix, required this.error});
+
+  final String prefix;
+  final String error;
+}
+
+_OpenResult _openNativeFeed(List<_StagedFeed> stagedFeeds) =>
     _NativeBindings.instance.open(stagedFeeds);
 
 List<TransitStop> _loadNativeStops(int handle) =>
@@ -482,17 +509,31 @@ class _NativeBindings {
     }
   }
 
-  int open(List<_StagedFeed> feeds) {
+  _OpenResult open(List<_StagedFeed> feeds) {
     if (feeds.length == 1 && feeds.single.prefix == null) {
       final resp = _call(open_, {'feedZip': feeds.single.path});
-      return (resp['handle'] as num).toInt();
+      return _OpenResult(
+        handle: (resp['handle'] as num).toInt(),
+        skipped: const [],
+      );
     }
     final resp = _call(open_, {
       'feeds': [
         for (final feed in feeds) {'prefix': feed.prefix, 'feedZip': feed.path},
       ],
     });
-    return (resp['handle'] as num).toInt();
+    final skippedJson = (resp['skipped'] as List<dynamic>?) ?? const [];
+    final skipped = [
+      for (final entry in skippedJson.cast<Map<String, dynamic>>())
+        _SkippedFeed(
+          prefix: entry['prefix'] as String? ?? '',
+          error: entry['error'] as String? ?? '',
+        ),
+    ];
+    return _OpenResult(
+      handle: (resp['handle'] as num).toInt(),
+      skipped: skipped,
+    );
   }
 
   void close(int handle) {

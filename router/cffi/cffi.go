@@ -56,8 +56,17 @@ type openRequest struct {
 	Feeds   []feedSource `json:"feeds,omitempty"`
 }
 
+// skippedFeed records a feed that failed to load inside a merged Open call.
+// The merge proceeds with the surviving feeds so one broken zip doesn't take
+// down the whole multi-operator network the user assembled.
+type skippedFeed struct {
+	Prefix string `json:"prefix"`
+	Error  string `json:"error"`
+}
+
 type openResponse struct {
-	Handle int64 `json:"handle"`
+	Handle  int64         `json:"handle"`
+	Skipped []skippedFeed `json:"skipped,omitempty"`
 }
 
 // closeRequest releases a previously-opened feed. It is safe to call with a
@@ -142,13 +151,13 @@ func OpenJSON(raw string) string {
 	if err := json.Unmarshal([]byte(raw), &req); err != nil {
 		return errorJSON("invalid request JSON: " + err.Error())
 	}
-	feed, err := loadFeed(req.FeedDir, req.FeedZip, req.Feeds)
+	feed, skipped, err := loadFeed(req.FeedDir, req.FeedZip, req.Feeds)
 	if err != nil {
 		return errorJSON("load feed: " + err.Error())
 	}
 	h := nextHandle.Add(1)
 	handles.Store(h, &feedHandle{feed: feed, engine: router.NewEngine(feed)})
-	return mustMarshal(openResponse{Handle: h})
+	return mustMarshal(openResponse{Handle: h, Skipped: skipped})
 }
 
 // CloseJSON releases the feed previously returned by OpenJSON. Calling with
@@ -407,7 +416,7 @@ func engineFor(req routeRequest) (*feedHandle, *router.Engine, error) {
 		}
 		return h, h.engine, nil
 	}
-	feed, err := loadFeed(req.FeedDir, req.FeedZip, req.Feeds)
+	feed, _, err := loadFeed(req.FeedDir, req.FeedZip, req.Feeds)
 	if err != nil {
 		return nil, nil, errors.New("load feed: " + err.Error())
 	}
@@ -415,32 +424,44 @@ func engineFor(req routeRequest) (*feedHandle, *router.Engine, error) {
 	return &feedHandle{feed: feed, engine: engine}, engine, nil
 }
 
-func loadFeed(dir, zip string, sources []feedSource) (*router.Feed, error) {
+func loadFeed(dir, zip string, sources []feedSource) (*router.Feed, []skippedFeed, error) {
 	if len(sources) > 0 {
 		if dir != "" || zip != "" {
-			return nil, errors.New("specify either feeds or one of feedZip/feedDir")
+			return nil, nil, errors.New("specify either feeds or one of feedZip/feedDir")
 		}
 		return loadMergedFeeds(sources)
 	}
-	return loadSingleFeed(dir, zip)
+	feed, err := loadSingleFeed(dir, zip)
+	return feed, nil, err
 }
 
-func loadMergedFeeds(sources []feedSource) (*router.Feed, error) {
+// loadMergedFeeds loads each source and merges the survivors. A per-feed
+// failure (missing stops.txt, malformed zip, etc.) is recorded in the
+// returned skipped slice rather than aborting — the user typically picked
+// dozens of feeds and one broken upstream shouldn't take down the whole
+// merged network. Only structural request errors (missing/duplicate prefix)
+// short-circuit the merge.
+func loadMergedFeeds(sources []feedSource) (*router.Feed, []skippedFeed, error) {
 	feeds := make(map[string]*router.Feed, len(sources))
+	var skipped []skippedFeed
 	for _, source := range sources {
 		if source.Prefix == "" {
-			return nil, errors.New("merged feeds require a prefix")
+			return nil, nil, errors.New("merged feeds require a prefix")
 		}
 		if _, exists := feeds[source.Prefix]; exists {
-			return nil, errors.New("duplicate merged feed prefix: " + source.Prefix)
+			return nil, nil, errors.New("duplicate merged feed prefix: " + source.Prefix)
 		}
 		feed, err := loadSingleFeed(source.FeedDir, source.FeedZip)
 		if err != nil {
-			return nil, errors.New(source.Prefix + ": " + err.Error())
+			skipped = append(skipped, skippedFeed{Prefix: source.Prefix, Error: err.Error()})
+			continue
 		}
 		feeds[source.Prefix] = feed
 	}
-	return router.Merge(feeds), nil
+	if len(feeds) == 0 {
+		return nil, skipped, errors.New("all merged feeds failed to load")
+	}
+	return router.Merge(feeds), skipped, nil
 }
 
 func loadSingleFeed(dir, zip string) (*router.Feed, error) {
