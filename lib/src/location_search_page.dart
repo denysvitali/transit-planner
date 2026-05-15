@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'app_log.dart';
 import 'geocoder.dart';
 import 'models.dart';
 import 'theme.dart';
@@ -164,7 +165,16 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
       _locating = true;
       _locationError = null;
     });
-    final location = await provider();
+    LocationCoordinate? location;
+    try {
+      location = await provider();
+    } catch (error, stackTrace) {
+      AppLogBuffer.instance.error(
+        error,
+        stackTrace: stackTrace,
+        context: 'Current location lookup failed',
+      );
+    }
     if (!mounted) return;
     if (location == null) {
       setState(() {

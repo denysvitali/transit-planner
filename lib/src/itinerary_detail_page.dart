@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 
+import 'itinerary_formatter.dart';
 import 'models.dart';
 import 'theme.dart';
 
@@ -33,6 +35,13 @@ class ItineraryDetailPage extends StatelessWidget {
           '$totalMinutes min · '
           '$transfers ${transfers == 1 ? 'transfer' : 'transfers'}',
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Copy trip details',
+            icon: const Icon(Icons.copy_all_outlined),
+            onPressed: () => _copyItinerary(context, itinerary),
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -42,12 +51,20 @@ class ItineraryDetailPage extends StatelessWidget {
                 : _ItineraryMap(itinerary: itinerary),
           ),
           const Divider(height: 1),
-          Expanded(
-            child: LegList(itinerary: itinerary),
-          ),
+          Expanded(child: LegList(itinerary: itinerary)),
         ],
       ),
     );
+  }
+
+  Future<void> _copyItinerary(BuildContext context, Itinerary itinerary) async {
+    await Clipboard.setData(
+      ClipboardData(text: formatItineraryDetails(itinerary)),
+    );
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Trip details copied')));
   }
 }
 
@@ -69,9 +86,7 @@ class LegList extends StatelessWidget {
       itemBuilder: (context, index) {
         final leg = itinerary.legs[index];
         final isTransit = leg.mode != TransitMode.walk;
-        final subtitleParts = <String>[
-          '${leg.from.name} → ${leg.to.name}',
-        ];
+        final subtitleParts = <String>['${leg.from.name} → ${leg.to.name}'];
         if (isTransit) {
           final tag = <String>[
             if (leg.routeName != null && leg.routeName!.isNotEmpty)
@@ -85,8 +100,9 @@ class LegList extends StatelessWidget {
             backgroundColor: isTransit
                 ? scheme.primary.withValues(alpha: 0.15)
                 : scheme.surfaceContainerHighest,
-            foregroundColor:
-                isTransit ? scheme.primary : scheme.onSurfaceVariant,
+            foregroundColor: isTransit
+                ? scheme.primary
+                : scheme.onSurfaceVariant,
             child: Icon(_modeIcon(leg.mode)),
           ),
           title: Text('${_clock(leg.departure)} → ${_clock(leg.arrival)}'),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:transit_planner/src/itinerary_detail_page.dart';
+import 'package:transit_planner/src/itinerary_formatter.dart';
 import 'package:transit_planner/src/models.dart';
 
 void main() {
@@ -83,8 +84,19 @@ void main() {
 
       expect(find.textContaining('20 min'), findsOneWidget);
       expect(find.textContaining('1 transfer'), findsOneWidget);
+      expect(find.byTooltip('Copy trip details'), findsOneWidget);
       // Legs render in the bottom half.
       expect(find.byType(ListTile), findsNWidgets(2));
     },
   );
+
+  test('formatItineraryDetails includes copyable leg details', () {
+    final text = formatItineraryDetails(buildItinerary());
+
+    expect(text, contains('Trip 08:00-08:20'));
+    expect(text, contains('Duration: 20 min'));
+    expect(text, contains('Bus 10'));
+    expect(text, contains('Origin Stop -> Mid Stop'));
+    expect(text, contains('Trip ID: trip-42'));
+  });
 }

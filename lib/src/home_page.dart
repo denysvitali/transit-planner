@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show setEquals;
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 
 import 'app_log.dart';
 import 'feed_catalog.dart';
-import 'feed_debug_overlay.dart';
 import 'feed_load_progress.dart';
 import 'go_ffi_router.dart';
+import 'itinerary_formatter.dart';
 import 'local_router.dart';
 import 'location_search_page.dart';
 import 'models.dart';
@@ -18,6 +19,7 @@ import 'theme.dart';
 // labels, transit lines, etc. No API key, no usage limits. CC-BY OSM data.
 // https://openfreemap.org/
 const _fallbackStyle = 'https://tiles.openfreemap.org/styles/liberty';
+const _maxStopPins = 240;
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key, this.router});
@@ -48,10 +50,10 @@ class _HomePageState extends State<HomePage> {
   bool _loading = false;
   int _maxTransfers = 2;
   List<Itinerary> _itineraries = const [];
-  // Null = "depart now" (or the feed's defaultDepartureHour when no clock
-  // is selected). When the user picks a time, we anchor planning to that
-  // specific TimeOfDay against today's date.
-  TimeOfDay? _departureTime;
+  int _selectedItineraryIndex = 0;
+  // Null = depart at the current date/time. A user-picked value pins both
+  // date and clock time until it is cleared.
+  DateTime? _departureOverride;
   FeedLoadProgress? _feedProgress;
   String? _loadError;
 
@@ -61,6 +63,7 @@ class _HomePageState extends State<HomePage> {
   LocationCoordinate? _lastUserLocation;
   final List<Symbol> _markerSymbols = [];
   final List<Line> _routeLines = [];
+  final List<Circle> _stopCircles = [];
   int _feedOpenSeq = 0;
 
   @override
@@ -97,10 +100,12 @@ class _HomePageState extends State<HomePage> {
         _loadError = null;
         _feedProgress = null;
         _itineraries = const [];
+        _selectedItineraryIndex = 0;
         _mapController = null;
         _styleLoaded = false;
         _markerSymbols.clear();
         _routeLines.clear();
+        _stopCircles.clear();
       });
     }
     try {
@@ -123,6 +128,7 @@ class _HomePageState extends State<HomePage> {
         _loadError = null;
         _feedProgress = null;
         _itineraries = const [];
+        _selectedItineraryIndex = 0;
       });
       await _refreshMapOverlays();
       await _plan();
@@ -137,6 +143,7 @@ class _HomePageState extends State<HomePage> {
         _loading = false;
         _loadError = error.toString();
         _itineraries = const [];
+        _selectedItineraryIndex = 0;
       });
     }
   }
@@ -218,13 +225,22 @@ class _HomePageState extends State<HomePage> {
     final cached = _lastUserLocation;
     if (cached != null) return cached;
     final controller = _mapController;
-    if (controller == null) return null;
+    if (controller == null) {
+      AppLogBuffer.instance.warning('Location requested before map is ready.');
+      return null;
+    }
     if (!_locationLayerEnabled && mounted) {
       setState(() => _locationLayerEnabled = true);
-      await Future<void>.delayed(const Duration(milliseconds: 300));
+      await Future<void>.delayed(const Duration(milliseconds: 500));
     }
     for (var attempt = 0; attempt < 10; attempt++) {
-      final latLng = await controller.requestMyLocationLatLng();
+      LatLng? latLng;
+      try {
+        latLng = await controller.requestMyLocationLatLng();
+      } catch (error) {
+        AppLogBuffer.instance.warning('Location lookup failed: $error');
+        return null;
+      }
       if (latLng != null) {
         final location = (
           latitude: latLng.latitude,
@@ -235,7 +251,38 @@ class _HomePageState extends State<HomePage> {
       }
       await Future<void>.delayed(const Duration(milliseconds: 300));
     }
+    AppLogBuffer.instance.warning(
+      'Location lookup timed out. Location permission may be denied.',
+    );
     return null;
+  }
+
+  Future<void> _useCurrentLocationAsOrigin() async {
+    final location = await _resolveCurrentLocation();
+    if (!mounted) return;
+    if (location == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Current location is unavailable. Check permission.'),
+        ),
+      );
+      return;
+    }
+    final snapped = nearestStop(_stops, location.latitude, location.longitude);
+    final description = snapped == null
+        ? 'Current GPS position'
+        : 'Nearest stop: ${snapped.name} '
+              '(${formatDistance(haversineMeters(location.latitude, location.longitude, snapped.latitude, snapped.longitude))})';
+    setState(() {
+      _origin = RoutePoint(
+        name: 'My location',
+        description: description,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        snappedStop: snapped,
+      );
+    });
+    await _refreshMapOverlays();
   }
 
   void _swapEndpoints() {
@@ -287,6 +334,7 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
       setState(() {
         _itineraries = filtered;
+        _selectedItineraryIndex = 0;
         _loading = false;
       });
       await _refreshMapOverlays();
@@ -299,6 +347,7 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
       setState(() {
         _itineraries = const [];
+        _selectedItineraryIndex = 0;
         _loading = false;
       });
       ScaffoldMessenger.of(
@@ -307,39 +356,73 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// The Toei timetable runs ~05:00–24:00 Asia/Tokyo. If the user is in
-  /// another timezone or asks at 03:00, "now" returns no trips. For the
-  /// initial plan, anchor to a fixed in-service moment so the home page
-  /// always has something to show. A user-picked [_departureTime] always
-  /// wins over the feed default.
   DateTime _earliestDepartureForFeed() {
-    final now = DateTime.now();
-    final picked = _departureTime;
-    if (picked != null) {
-      return DateTime(now.year, now.month, now.day, picked.hour, picked.minute);
-    }
-    final overrideHour = _activeFeed.defaultDepartureHour;
-    if (overrideHour == null) return now;
-    return DateTime(now.year, now.month, now.day, overrideHour, 0);
+    return _departureOverride ?? DateTime.now();
+  }
+
+  Future<void> _pickDepartureDate() async {
+    final current = _earliestDepartureForFeed();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: current,
+      firstDate: current.subtract(const Duration(days: 1)),
+      lastDate: current.add(const Duration(days: 30)),
+      helpText: 'Departure date',
+    );
+    if (picked == null) return;
+    setState(() {
+      _departureOverride = DateTime(
+        picked.year,
+        picked.month,
+        picked.day,
+        current.hour,
+        current.minute,
+      );
+    });
+    await _plan();
   }
 
   Future<void> _pickDepartureTime() async {
-    final initial =
-        _departureTime ?? TimeOfDay.fromDateTime(_earliestDepartureForFeed());
+    final current = _earliestDepartureForFeed();
+    final initial = TimeOfDay.fromDateTime(current);
     final picked = await showTimePicker(
       context: context,
       initialTime: initial,
       helpText: 'Departure time',
     );
     if (picked == null) return;
-    setState(() => _departureTime = picked);
+    setState(() {
+      _departureOverride = DateTime(
+        current.year,
+        current.month,
+        current.day,
+        picked.hour,
+        picked.minute,
+      );
+    });
     await _plan();
   }
 
   void _clearDepartureTime() {
-    if (_departureTime == null) return;
-    setState(() => _departureTime = null);
+    if (_departureOverride == null) return;
+    setState(() => _departureOverride = null);
     _plan();
+  }
+
+  void _selectItinerary(int index) {
+    if (index == _selectedItineraryIndex) return;
+    setState(() => _selectedItineraryIndex = index);
+    _refreshMapOverlays();
+  }
+
+  Future<void> _copyItinerary(Itinerary itinerary) async {
+    await Clipboard.setData(
+      ClipboardData(text: formatItineraryDetails(itinerary)),
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Trip details copied')));
   }
 
   List<Itinerary> _filterByModes(List<Itinerary> itineraries) {
@@ -383,11 +466,15 @@ class _HomePageState extends State<HomePage> {
     final scheme = Theme.of(context).colorScheme;
     final transitColor = _hexColor(scheme.primary);
     final walkColor = _hexColor(scheme.outline);
+    final stopColor = _hexColor(scheme.secondary);
+    final stopStrokeColor = _hexColor(scheme.surface);
 
     final staleRouteLines = List<Line>.of(_routeLines);
     _routeLines.clear();
     final staleMarkerSymbols = List<Symbol>.of(_markerSymbols);
     _markerSymbols.clear();
+    final staleStopCircles = List<Circle>.of(_stopCircles);
+    _stopCircles.clear();
 
     for (final line in staleRouteLines) {
       try {
@@ -399,13 +486,23 @@ class _HomePageState extends State<HomePage> {
         await controller.removeSymbol(sym);
       } catch (_) {}
     }
+    for (final circle in staleStopCircles) {
+      try {
+        await controller.removeCircle(circle);
+      } catch (_) {}
+    }
 
     final origin = _origin;
     final destination = _destination;
     final points = <LatLng>[];
+    final anchorPoints = <LocationCoordinate>[];
 
     if (origin != null) {
       points.add(LatLng(origin.latitude, origin.longitude));
+      anchorPoints.add((
+        latitude: origin.latitude,
+        longitude: origin.longitude,
+      ));
       _markerSymbols.add(
         await controller.addSymbol(
           SymbolOptions(
@@ -421,6 +518,10 @@ class _HomePageState extends State<HomePage> {
     }
     if (destination != null) {
       points.add(LatLng(destination.latitude, destination.longitude));
+      anchorPoints.add((
+        latitude: destination.latitude,
+        longitude: destination.longitude,
+      ));
       _markerSymbols.add(
         await controller.addSymbol(
           SymbolOptions(
@@ -436,7 +537,8 @@ class _HomePageState extends State<HomePage> {
     }
 
     if (_itineraries.isNotEmpty) {
-      final itinerary = _itineraries.first;
+      final index = _selectedItineraryIndex.clamp(0, _itineraries.length - 1);
+      final itinerary = _itineraries[index];
       for (final leg in itinerary.legs) {
         final geometry = [
           LatLng(leg.from.latitude, leg.from.longitude),
@@ -455,6 +557,30 @@ class _HomePageState extends State<HomePage> {
           ),
         );
       }
+    }
+
+    if (anchorPoints.isEmpty) {
+      anchorPoints.add((
+        latitude: _activeFeed.centerLatitude,
+        longitude: _activeFeed.centerLongitude,
+      ));
+    }
+    final stopPins = _stopsForMap(anchorPoints);
+    if (stopPins.isNotEmpty) {
+      _stopCircles.addAll(
+        await controller.addCircles([
+          for (final stop in stopPins)
+            CircleOptions(
+              geometry: LatLng(stop.latitude, stop.longitude),
+              circleRadius: 4.5,
+              circleColor: stopColor,
+              circleOpacity: 0.75,
+              circleStrokeColor: stopStrokeColor,
+              circleStrokeWidth: 1.5,
+              circleStrokeOpacity: 0.9,
+            ),
+        ]),
+      );
     }
 
     if (points.isNotEmpty) {
@@ -478,6 +604,37 @@ class _HomePageState extends State<HomePage> {
         }
       }
     }
+  }
+
+  List<TransitStop> _stopsForMap(List<LocationCoordinate> anchors) {
+    if (_stops.length <= _maxStopPins) {
+      return _stops;
+    }
+    final sorted = _stops.toList(growable: false);
+    sorted.sort((a, b) {
+      return _nearestAnchorDistance(
+        a,
+        anchors,
+      ).compareTo(_nearestAnchorDistance(b, anchors));
+    });
+    return sorted.take(_maxStopPins).toList(growable: false);
+  }
+
+  double _nearestAnchorDistance(
+    TransitStop stop,
+    List<LocationCoordinate> anchors,
+  ) {
+    var best = double.infinity;
+    for (final anchor in anchors) {
+      final distance = haversineMeters(
+        anchor.latitude,
+        anchor.longitude,
+        stop.latitude,
+        stop.longitude,
+      );
+      if (distance < best) best = distance;
+    }
+    return best;
   }
 
   LatLngBounds? _boundsForPoints(List<LatLng> points) {
@@ -551,9 +708,9 @@ class _HomePageState extends State<HomePage> {
                   top: 148,
                   child: SafeArea(
                     bottom: false,
-                    child: LoadedFeedsDebugView(
-                      feed: _activeFeed,
-                      stopCount: _stops.length,
+                    child: _MapControls(
+                      onUseLocation: _useCurrentLocationAsOrigin,
+                      onOpenDeveloper: () => context.go('/settings/logs'),
                     ),
                   ),
                 ),
@@ -574,15 +731,20 @@ class _HomePageState extends State<HomePage> {
                 ),
                 _ResultsSheet(
                   itineraries: _itineraries,
+                  selectedIndex: _selectedItineraryIndex,
                   loading: _loading,
                   modes: _modes,
                   maxTransfers: _maxTransfers,
-                  departureTime: _departureTime,
+                  departure: _earliestDepartureForFeed(),
+                  hasDepartureOverride: _departureOverride != null,
                   onModeToggled: _setModeEnabled,
                   onMaxTransfersChanged: _setMaxTransfers,
                   onPlan: _plan,
+                  onPickDepartureDate: _pickDepartureDate,
                   onPickDepartureTime: _pickDepartureTime,
                   onClearDepartureTime: _clearDepartureTime,
+                  onItinerarySelected: _selectItinerary,
+                  onCopyItinerary: _copyItinerary,
                   origin: _origin,
                   destination: _destination,
                 ),
@@ -613,6 +775,42 @@ class _MapAttribution extends StatelessWidget {
             style: TextStyle(fontSize: 10, color: Colors.black87),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _MapControls extends StatelessWidget {
+  const _MapControls({
+    required this.onUseLocation,
+    required this.onOpenDeveloper,
+  });
+
+  final VoidCallback onUseLocation;
+  final VoidCallback onOpenDeveloper;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surface,
+      elevation: 3,
+      borderRadius: BorderRadius.circular(AppRadius.s),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: 'Use current location',
+            onPressed: onUseLocation,
+            icon: const Icon(Icons.my_location),
+          ),
+          const SizedBox(width: 40, child: Divider(height: 1)),
+          IconButton(
+            tooltip: 'Developer logs',
+            onPressed: onOpenDeveloper,
+            icon: const Icon(Icons.bug_report_outlined),
+          ),
+        ],
       ),
     );
   }
@@ -873,29 +1071,39 @@ class _EndpointField extends StatelessWidget {
 class _ResultsSheet extends StatelessWidget {
   const _ResultsSheet({
     required this.itineraries,
+    required this.selectedIndex,
     required this.loading,
     required this.modes,
     required this.maxTransfers,
-    required this.departureTime,
+    required this.departure,
+    required this.hasDepartureOverride,
     required this.onModeToggled,
     required this.onMaxTransfersChanged,
     required this.onPlan,
+    required this.onPickDepartureDate,
     required this.onPickDepartureTime,
     required this.onClearDepartureTime,
+    required this.onItinerarySelected,
+    required this.onCopyItinerary,
     required this.origin,
     required this.destination,
   });
 
   final List<Itinerary> itineraries;
+  final int selectedIndex;
   final bool loading;
   final Set<TransitMode> modes;
   final int maxTransfers;
-  final TimeOfDay? departureTime;
+  final DateTime departure;
+  final bool hasDepartureOverride;
   final void Function(TransitMode, bool) onModeToggled;
   final ValueChanged<double> onMaxTransfersChanged;
   final VoidCallback onPlan;
+  final VoidCallback onPickDepartureDate;
   final VoidCallback onPickDepartureTime;
   final VoidCallback onClearDepartureTime;
+  final ValueChanged<int> onItinerarySelected;
+  final ValueChanged<Itinerary> onCopyItinerary;
   final RoutePoint? origin;
   final RoutePoint? destination;
 
@@ -903,11 +1111,11 @@ class _ResultsSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return DraggableScrollableSheet(
-      initialChildSize: 0.32,
-      minChildSize: 0.14,
-      maxChildSize: 0.92,
+      initialChildSize: 0.28,
+      minChildSize: 0.16,
+      maxChildSize: 0.88,
       snap: true,
-      snapSizes: const [0.14, 0.32, 0.92],
+      snapSizes: const [0.16, 0.28, 0.88],
       builder: (context, controller) {
         return Material(
           elevation: 8,
@@ -962,91 +1170,111 @@ class _ResultsSheet extends StatelessWidget {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.m),
-                child: Wrap(
-                  spacing: AppSpacing.xs,
-                  runSpacing: AppSpacing.xs,
-                  children: [
-                    for (final entry in const <(TransitMode, String)>[
-                      (TransitMode.bus, 'Bus'),
-                      (TransitMode.tram, 'Tram'),
-                      (TransitMode.rail, 'Rail'),
-                      (TransitMode.subway, 'Metro'),
-                      (TransitMode.ferry, 'Ferry'),
-                    ])
-                      FilterChip(
-                        selected: modes.contains(entry.$1),
-                        label: Text(entry.$2),
-                        avatar: Icon(_modeIcon(entry.$1), size: 18),
-                        onSelected: (s) => onModeToggled(entry.$1, s),
-                      ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.m),
-                child: Row(
-                  children: [
-                    const Icon(Icons.transfer_within_a_station),
-                    const SizedBox(width: AppSpacing.s),
-                    Text('Max transfers', style: theme.textTheme.bodySmall),
-                    Expanded(
-                      child: Slider(
-                        value: maxTransfers.toDouble(),
-                        min: 0,
-                        max: 5,
-                        divisions: 5,
-                        label: '$maxTransfers',
-                        onChanged: onMaxTransfersChanged,
-                      ),
-                    ),
-                    Text('$maxTransfers'),
-                  ],
-                ),
-              ),
-              Padding(
                 padding: const EdgeInsets.fromLTRB(
                   AppSpacing.m,
-                  0,
+                  AppSpacing.s,
                   AppSpacing.m,
                   AppSpacing.s,
                 ),
-                child: Row(
+                child: Wrap(
+                  spacing: AppSpacing.s,
+                  runSpacing: AppSpacing.xs,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    const Icon(Icons.schedule),
-                    const SizedBox(width: AppSpacing.s),
-                    Text('Depart', style: theme.textTheme.bodySmall),
-                    const SizedBox(width: AppSpacing.s),
-                    Expanded(
-                      child: ActionChip(
-                        avatar: const Icon(Icons.access_time, size: 18),
-                        label: Text(
-                          departureTime == null
-                              ? 'Now'
-                              : departureTime!.format(context),
-                        ),
-                        onPressed: onPickDepartureTime,
-                      ),
+                    ActionChip(
+                      avatar: const Icon(Icons.calendar_today, size: 18),
+                      label: Text(_dateLabel(departure)),
+                      onPressed: onPickDepartureDate,
                     ),
-                    if (departureTime != null)
+                    ActionChip(
+                      avatar: const Icon(Icons.access_time, size: 18),
+                      label: Text(
+                        hasDepartureOverride
+                            ? _clock(departure)
+                            : 'Now ${_clock(departure)}',
+                      ),
+                      onPressed: onPickDepartureTime,
+                    ),
+                    if (hasDepartureOverride)
                       IconButton(
-                        tooltip: 'Reset to default',
+                        tooltip: 'Use current time',
                         icon: const Icon(Icons.close),
                         onPressed: onClearDepartureTime,
                       ),
                   ],
                 ),
               ),
+              ExpansionTile(
+                tilePadding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.m,
+                ),
+                childrenPadding: const EdgeInsets.fromLTRB(
+                  AppSpacing.m,
+                  0,
+                  AppSpacing.m,
+                  AppSpacing.s,
+                ),
+                title: const Text('Routing options'),
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Wrap(
+                      spacing: AppSpacing.xs,
+                      runSpacing: AppSpacing.xs,
+                      children: [
+                        for (final entry in const <(TransitMode, String)>[
+                          (TransitMode.bus, 'Bus'),
+                          (TransitMode.tram, 'Tram'),
+                          (TransitMode.rail, 'Rail'),
+                          (TransitMode.subway, 'Metro'),
+                          (TransitMode.ferry, 'Ferry'),
+                        ])
+                          FilterChip(
+                            selected: modes.contains(entry.$1),
+                            label: Text(entry.$2),
+                            avatar: Icon(_modeIcon(entry.$1), size: 18),
+                            onSelected: (s) => onModeToggled(entry.$1, s),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      const Icon(Icons.transfer_within_a_station),
+                      const SizedBox(width: AppSpacing.s),
+                      Text('Max transfers', style: theme.textTheme.bodySmall),
+                      Expanded(
+                        child: Slider(
+                          value: maxTransfers.toDouble(),
+                          min: 0,
+                          max: 5,
+                          divisions: 5,
+                          label: '$maxTransfers',
+                          onChanged: onMaxTransfersChanged,
+                        ),
+                      ),
+                      Text('$maxTransfers'),
+                    ],
+                  ),
+                ],
+              ),
               const Divider(height: 1),
               if (!loading && itineraries.isEmpty)
                 _NoItinerariesState(origin: origin, destination: destination),
-              for (final itinerary in itineraries)
+              for (final entry in itineraries.indexed)
                 Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.m,
                     vertical: AppSpacing.xs,
                   ),
-                  child: _ItineraryCard(itinerary: itinerary),
+                  child: _ItineraryCard(
+                    itinerary: entry.$2,
+                    selected: entry.$1 == selectedIndex,
+                    onTap: () => onItinerarySelected(entry.$1),
+                    onCopy: () => onCopyItinerary(entry.$2),
+                    onOpenDetails: () =>
+                        context.push('/itinerary', extra: entry.$2),
+                  ),
                 ),
               const SizedBox(height: AppSpacing.xl),
             ],
@@ -1096,16 +1324,29 @@ class _NoItinerariesState extends StatelessWidget {
 }
 
 class _ItineraryCard extends StatelessWidget {
-  const _ItineraryCard({required this.itinerary});
+  const _ItineraryCard({
+    required this.itinerary,
+    required this.selected,
+    required this.onTap,
+    required this.onCopy,
+    required this.onOpenDetails,
+  });
 
   final Itinerary itinerary;
+  final bool selected;
+  final VoidCallback onTap;
+  final VoidCallback onCopy;
+  final VoidCallback onOpenDetails;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return InkWell(
-      onTap: () => context.push('/itinerary', extra: itinerary),
+      onTap: onTap,
       child: Card(
+        color: selected
+            ? theme.colorScheme.primaryContainer.withValues(alpha: 0.35)
+            : null,
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.m),
           child: Column(
@@ -1113,6 +1354,14 @@ class _ItineraryCard extends StatelessWidget {
             children: [
               Row(
                 children: [
+                  if (selected) ...[
+                    Icon(
+                      Icons.check_circle,
+                      color: theme.colorScheme.primary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                  ],
                   Expanded(
                     child: Text(
                       '${_clock(itinerary.departure)} - ${_clock(itinerary.arrival)}',
@@ -1122,6 +1371,16 @@ class _ItineraryCard extends StatelessWidget {
                     ),
                   ),
                   Text('${itinerary.duration.inMinutes} min'),
+                  IconButton(
+                    tooltip: 'Copy trip details',
+                    icon: const Icon(Icons.copy_all_outlined),
+                    onPressed: onCopy,
+                  ),
+                  IconButton(
+                    tooltip: 'Open trip details',
+                    icon: const Icon(Icons.open_in_full),
+                    onPressed: onOpenDetails,
+                  ),
                 ],
               ),
               const SizedBox(height: AppSpacing.xs),
@@ -1183,6 +1442,18 @@ String _clock(DateTime value) {
   final h = value.hour.toString().padLeft(2, '0');
   final m = value.minute.toString().padLeft(2, '0');
   return '$h:$m';
+}
+
+String _dateLabel(DateTime value) {
+  final now = DateTime.now();
+  if (value.year == now.year &&
+      value.month == now.month &&
+      value.day == now.day) {
+    return 'Today';
+  }
+  final month = value.month.toString().padLeft(2, '0');
+  final day = value.day.toString().padLeft(2, '0');
+  return '${value.year}-$month-$day';
 }
 
 String _progressText(FeedLoadProgress progress) {

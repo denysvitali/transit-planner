@@ -10,6 +10,21 @@ import 'theme.dart';
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
 
+  Future<void> _copyDiagnostics(BuildContext context) async {
+    final selection = NetworkSelection.instance;
+    final report = StringBuffer()
+      ..writeln('Transit Planner diagnostics')
+      ..writeln('Active feed: ${selection.feed.id} (${selection.feed.name})')
+      ..writeln('Selected feeds: ${selection.selectedFeedIds.join(', ')}')
+      ..writeln()
+      ..writeln(AppLogBuffer.instance.formatted(_logLevels));
+    await Clipboard.setData(ClipboardData(text: report.toString().trimRight()));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Diagnostic report copied')));
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -48,6 +63,13 @@ class SettingsPage extends StatelessWidget {
                   onTap: () => context.push('/settings/logs'),
                 );
               },
+            ),
+            ListTile(
+              leading: const Icon(Icons.copy_all_outlined),
+              title: const Text('Copy diagnostic report'),
+              subtitle: const Text('Active feed, selected networks, and logs'),
+              contentPadding: EdgeInsets.zero,
+              onTap: () => _copyDiagnostics(context),
             ),
             const SizedBox(height: AppSpacing.l),
             const _AboutSection(),
