@@ -85,3 +85,17 @@ available. This is intended for fragmented countries such as Japan and Italy,
 where a small curated app catalog cannot represent every municipal or operator
 feed. Each generated `MANIFEST.json` records the publisher, source URL, licence
 string, fetch time, and hash for downstream attribution review.
+
+## Transitland complete-country mode
+
+`tool/fetch_gtfs -country <CC> -complete -complete-source transitland` reads
+GTFS feeds from the Transitland REST API. Set `TRANSITLAND_API_KEY` in the
+environment; the fetcher sends it as an `apikey` header and never stores it in
+download URLs or `MANIFEST.json`.
+
+Transitland discovery is currently bbox-based for `CH`, `IT`, and `JP`, and it
+requests feeds with redistribution, derived-product, and commercial-use filters
+that exclude feeds explicitly marked "no". Transitland's latest static GTFS
+download endpoint can still reject a feed when redistribution is not allowed by
+the source licence, so each generated manifest must still be reviewed against
+the official publisher terms before redistribution.

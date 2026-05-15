@@ -8,6 +8,7 @@
 //	go run ./tool/fetch_gtfs -feed toei-train            # one feed
 //	go run ./tool/fetch_gtfs -country IT                 # curated Italian feeds
 //	go run ./tool/fetch_gtfs -country JP -complete       # active no-key JP feeds from Mobility Database
+//	go run ./tool/fetch_gtfs -country JP -complete -complete-source transitland
 //	go run ./tool/fetch_gtfs -feed toei-bus -out my/dir  # custom output
 //
 // Downloaded zips land in assets/real_gtfs/<country>/<feed>/<feed>.zip with a
@@ -15,11 +16,15 @@
 // assets/real_gtfs/ is gitignored; commit only vendored fixtures under
 // assets/sample_*.
 //
-// Sources we draw from — all open, no API key required:
+// Sources we draw from:
 //
 //   - Mobility Database (https://mobilitydatabase.org, CSV at
 //     https://files.mobilitydatabase.org/feeds_v2.csv) — global catalog used
 //     by -complete for active no-key GTFS rows.
+//   - Transitland REST API (https://transit.land/api/v2/rest) — authenticated
+//     catalog used by -complete -complete-source transitland. Set
+//     TRANSITLAND_API_KEY in the environment; the key is sent as a header and
+//     is never written to manifests.
 //   - ODPT public bucket (api-public.odpt.org) — Tokyo Metropolitan Bureau of
 //     Transportation feeds (CC-BY 4.0).
 //   - Official Swiss and Italian regional/city portals for the curated CH and
@@ -42,9 +47,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -52,6 +59,15 @@ import (
 )
 
 const mobilityDatabaseFeedsURL = "https://files.mobilitydatabase.org/feeds_v2.csv"
+const transitlandBaseURL = "https://transit.land/api/v2/rest"
+const transitlandAPIKeyEnv = "TRANSITLAND_API_KEY"
+
+type completeSource string
+
+const (
+	completeSourceMobilityDB  completeSource = "mobilitydb"
+	completeSourceTransitland completeSource = "transitland"
+)
 
 type manifest struct {
 	Feed        string    `json:"feed"`
@@ -73,11 +89,17 @@ func main() {
 		outDir   = flag.String("out", "", "output directory (default: assets/real_gtfs/<country>/<feed>)")
 		list     = flag.Bool("list", false, "list known feeds and exit")
 		complete = flag.Bool("complete", false, "with -country, use Mobility Database's active no-key feed catalog for fuller country coverage")
+		source   = flag.String("complete-source", string(completeSourceMobilityDB), "complete catalog source: mobilitydb or transitland")
 	)
 	flag.Parse()
 
+	completeSource, err := parseCompleteSource(*source)
+	if err != nil {
+		fail(err)
+	}
+
 	if *list {
-		if err := listFeeds(strings.ToUpper(*country), *complete); err != nil {
+		if err := listFeeds(strings.ToUpper(*country), *complete, completeSource); err != nil {
 			fail(err)
 		}
 		return
@@ -87,7 +109,7 @@ func main() {
 	case *country != "" && *feedName != "":
 		fail(fmt.Errorf("specify -feed or -country, not both"))
 	case *country != "":
-		if err := fetchCountry(strings.ToUpper(*country), *outDir, *complete); err != nil {
+		if err := fetchCountry(strings.ToUpper(*country), *outDir, *complete, completeSource); err != nil {
 			fail(err)
 		}
 	case *feedName != "":
@@ -103,14 +125,24 @@ func main() {
 	}
 }
 
-func listFeeds(country string, complete bool) error {
+func parseCompleteSource(value string) (completeSource, error) {
+	source := completeSource(strings.ToLower(strings.TrimSpace(value)))
+	switch source {
+	case completeSourceMobilityDB, completeSourceTransitland:
+		return source, nil
+	default:
+		return "", fmt.Errorf("unknown -complete-source %q (want mobilitydb or transitland)", value)
+	}
+}
+
+func listFeeds(country string, complete bool, source completeSource) error {
 	feeds := catalog.SortedFeeds()
 	if complete {
 		if country == "" {
 			return fmt.Errorf("-complete requires -country when listing feeds")
 		}
 		var err error
-		feeds, err = fetchMobilityDatabaseFeedSpecs(country)
+		feeds, err = fetchCompleteFeedSpecs(country, source)
 		if err != nil {
 			return err
 		}
@@ -131,11 +163,11 @@ func listFeeds(country string, complete bool) error {
 	return nil
 }
 
-func fetchCountry(country, outDir string, complete bool) error {
+func fetchCountry(country, outDir string, complete bool, source completeSource) error {
 	feeds := catalog.SortedFeeds()
 	if complete {
 		var err error
-		feeds, err = fetchMobilityDatabaseFeedSpecs(country)
+		feeds, err = fetchCompleteFeedSpecs(country, source)
 		if err != nil {
 			return err
 		}
@@ -159,6 +191,17 @@ func fetchCountry(country, outDir string, complete bool) error {
 		return fmt.Errorf("no feeds for country %q", country)
 	}
 	return nil
+}
+
+func fetchCompleteFeedSpecs(country string, source completeSource) ([]catalog.FeedSpec, error) {
+	switch source {
+	case completeSourceMobilityDB:
+		return fetchMobilityDatabaseFeedSpecs(country)
+	case completeSourceTransitland:
+		return fetchTransitlandFeedSpecs(country, os.Getenv(transitlandAPIKeyEnv), transitlandBaseURL)
+	default:
+		return nil, fmt.Errorf("unknown complete source %q", source)
+	}
 }
 
 func fetchMobilityDatabaseFeedSpecs(country string) ([]catalog.FeedSpec, error) {
@@ -289,6 +332,200 @@ func mobilityDatabaseLicenseName(url string) string {
 	}
 }
 
+type countryBBox struct {
+	minLon float64
+	minLat float64
+	maxLon float64
+	maxLat float64
+}
+
+var transitlandCountryBBoxes = map[string]countryBBox{
+	"CH": {minLon: 5.95, minLat: 45.82, maxLon: 10.49, maxLat: 47.81},
+	"IT": {minLon: 6.62, minLat: 35.49, maxLon: 18.52, maxLat: 47.09},
+	"JP": {minLon: 122.93, minLat: 24.04, maxLon: 153.99, maxLat: 45.56},
+}
+
+type transitlandFeedsResponse struct {
+	Feeds []transitlandFeed `json:"feeds"`
+	Meta  struct {
+		After int `json:"after"`
+	} `json:"meta"`
+}
+
+type transitlandFeed struct {
+	ID                  int    `json:"id"`
+	OnestopID           string `json:"onestop_id"`
+	Name                string `json:"name"`
+	AssociatedOperators []struct {
+		Name string `json:"name"`
+	} `json:"associated_operators"`
+	License struct {
+		SPDXIdentifier     string `json:"spdx_identifier"`
+		URL                string `json:"url"`
+		AttributionText    string `json:"attribution_text"`
+		Redistribution     string `json:"redistribution_allowed"`
+		CommercialUse      string `json:"commercial_use_allowed"`
+		CreateDerived      string `json:"create_derived_product"`
+		ShareAlikeOptional string `json:"share_alike_optional"`
+	} `json:"license"`
+}
+
+func fetchTransitlandFeedSpecs(country, apiKey, baseURL string) ([]catalog.FeedSpec, error) {
+	if strings.TrimSpace(apiKey) == "" {
+		return nil, fmt.Errorf("%s is required for -complete-source transitland", transitlandAPIKeyEnv)
+	}
+	bbox, ok := transitlandCountryBBoxes[country]
+	if !ok {
+		return nil, fmt.Errorf("Transitland complete coverage is not configured for country %q", country)
+	}
+
+	var out []catalog.FeedSpec
+	seen := map[string]bool{}
+	after := 0
+	for {
+		req, err := transitlandFeedsRequest(baseURL, apiKey, bbox, after)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		var parsed transitlandFeedsResponse
+		err = decodeJSONResponse(resp, &parsed)
+		if err != nil {
+			return nil, err
+		}
+		for _, feed := range parsed.Feeds {
+			spec, ok := transitlandFeedSpec(country, baseURL, feed)
+			if !ok || seen[spec.ID] {
+				continue
+			}
+			seen[spec.ID] = true
+			out = append(out, spec)
+		}
+		if parsed.Meta.After == 0 || parsed.Meta.After == after {
+			break
+		}
+		after = parsed.Meta.After
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
+}
+
+func transitlandFeedsRequest(baseURL, apiKey string, bbox countryBBox, after int) (*http.Request, error) {
+	endpoint, err := url.Parse(strings.TrimRight(baseURL, "/") + "/feeds")
+	if err != nil {
+		return nil, err
+	}
+	q := endpoint.Query()
+	q.Set("spec", "gtfs")
+	q.Set("fetch_error", "false")
+	q.Set("limit", "100")
+	q.Set("bbox", fmt.Sprintf("%g,%g,%g,%g", bbox.minLon, bbox.minLat, bbox.maxLon, bbox.maxLat))
+	q.Set("license_redistribution_allowed", "exclude_no")
+	q.Set("license_create_derived_product", "exclude_no")
+	q.Set("license_commercial_use_allowed", "exclude_no")
+	if after > 0 {
+		q.Set("after", strconv.Itoa(after))
+	}
+	endpoint.RawQuery = q.Encode()
+
+	req, err := http.NewRequest(http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "transit-planner-fetch/0.1 (+github.com/denysvitali/transit-planner)")
+	req.Header.Set("apikey", apiKey)
+	return req, nil
+}
+
+func decodeJSONResponse(resp *http.Response, target any) error {
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<14))
+		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
+	}
+	return json.NewDecoder(resp.Body).Decode(target)
+}
+
+func transitlandFeedSpec(country, baseURL string, feed transitlandFeed) (catalog.FeedSpec, bool) {
+	key := feed.OnestopID
+	if key == "" && feed.ID > 0 {
+		key = strconv.Itoa(feed.ID)
+	}
+	if key == "" {
+		return catalog.FeedSpec{}, false
+	}
+	idSuffix := key
+	if feed.OnestopID == "" {
+		idSuffix = "id-" + idSuffix
+	}
+	id := "transitland-" + sanitizeFeedID(idSuffix)
+	publisher := transitlandPublisher(feed)
+	name := strings.TrimSpace(feed.Name)
+	if name == "" {
+		name = publisher
+	}
+	license := transitlandLicenseName(feed)
+	attribution := strings.TrimSpace(feed.License.AttributionText)
+	if attribution == "" {
+		attribution = "Transit data © " + publisher + ", " + license + "; discovered through Transitland."
+	}
+	downloadURL := strings.TrimRight(baseURL, "/") + "/feeds/" + url.PathEscape(key) + "/download_latest_feed_version"
+	return catalog.FeedSpec{
+		ID: id, Name: name, Country: country, Region: "Transitland " + country,
+		Publisher: publisher, License: license, SourceURL: downloadURL,
+		LocalFileName: id + ".zip",
+		Description:   name + " GTFS feed discovered through Transitland.",
+		Attribution:   attribution,
+	}, true
+}
+
+func transitlandPublisher(feed transitlandFeed) string {
+	for _, operator := range feed.AssociatedOperators {
+		if name := strings.TrimSpace(operator.Name); name != "" {
+			return name
+		}
+	}
+	if name := strings.TrimSpace(feed.Name); name != "" {
+		return name
+	}
+	return "Transitland"
+}
+
+func transitlandLicenseName(feed transitlandFeed) string {
+	switch {
+	case feed.License.SPDXIdentifier != "":
+		return feed.License.SPDXIdentifier
+	case feed.License.URL != "":
+		return feed.License.URL
+	default:
+		return "Transitland license metadata"
+	}
+}
+
+func sanitizeFeedID(value string) string {
+	value = strings.ToLower(value)
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	out = strings.Join(strings.FieldsFunc(out, func(r rune) bool { return r == '-' }), "-")
+	if out == "" {
+		return "feed"
+	}
+	return out
+}
+
 func fetchOne(spec catalog.FeedSpec, outDir string) (string, error) {
 	dir := outDir
 	if dir == "" {
@@ -334,6 +571,13 @@ func download(url, dst string) error {
 		return err
 	}
 	req.Header.Set("User-Agent", "transit-planner-fetch/0.1 (+github.com/denysvitali/transit-planner)")
+	if req.URL.Host == "transit.land" {
+		if apiKey := strings.TrimSpace(os.Getenv(transitlandAPIKeyEnv)); apiKey != "" {
+			req.Header.Set("apikey", apiKey)
+		} else {
+			return fmt.Errorf("%s is required to download Transitland feeds", transitlandAPIKeyEnv)
+		}
+	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

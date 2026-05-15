@@ -1,6 +1,9 @@
 package main
 
 import (
+	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"testing"
 )
@@ -30,5 +33,110 @@ jp-old,gtfs,,JP,Tokyo,Tokyo,Old Publisher,True,Old,,,,https://example.com/old.zi
 	}
 	if feed.License != "CC-BY-4.0" {
 		t.Fatalf("License = %q", feed.License)
+	}
+}
+
+func TestTransitlandLiveFeedsWhenAPIKeyPresent(t *testing.T) {
+	apiKey := os.Getenv(transitlandAPIKeyEnv)
+	if apiKey == "" {
+		t.Skipf("%s is not set", transitlandAPIKeyEnv)
+	}
+	req, err := transitlandFeedsRequest(
+		transitlandBaseURL,
+		apiKey,
+		transitlandCountryBBoxes["CH"],
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed transitlandFeedsResponse
+	if err := decodeJSONResponse(resp, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.Feeds) == 0 {
+		t.Fatal("Transitland returned no Swiss GTFS feeds")
+	}
+	if _, ok := transitlandFeedSpec("CH", transitlandBaseURL, parsed.Feeds[0]); !ok {
+		t.Fatal("Transitland feed could not be converted to a feed spec")
+	}
+}
+
+func TestTransitlandFeedSpecBuildsAuthenticatedDownloadURLWithoutKey(t *testing.T) {
+	spec, ok := transitlandFeedSpec("JP", "https://transit.land/api/v2/rest", transitlandFeed{
+		ID:        123,
+		OnestopID: "f-test~feed",
+		Name:      "Example Feed",
+		AssociatedOperators: []struct {
+			Name string `json:"name"`
+		}{
+			{Name: "Example Operator"},
+		},
+		License: struct {
+			SPDXIdentifier     string `json:"spdx_identifier"`
+			URL                string `json:"url"`
+			AttributionText    string `json:"attribution_text"`
+			Redistribution     string `json:"redistribution_allowed"`
+			CommercialUse      string `json:"commercial_use_allowed"`
+			CreateDerived      string `json:"create_derived_product"`
+			ShareAlikeOptional string `json:"share_alike_optional"`
+		}{
+			SPDXIdentifier:  "CC-BY-4.0",
+			AttributionText: "Use Example attribution.",
+		},
+	})
+	if !ok {
+		t.Fatal("transitlandFeedSpec returned false")
+	}
+	if spec.ID != "transitland-f-test-feed" {
+		t.Fatalf("ID = %q", spec.ID)
+	}
+	if spec.SourceURL != "https://transit.land/api/v2/rest/feeds/f-test~feed/download_latest_feed_version" {
+		t.Fatalf("SourceURL = %q", spec.SourceURL)
+	}
+	if strings.Contains(spec.SourceURL, "apikey") {
+		t.Fatalf("SourceURL must not contain API key material: %q", spec.SourceURL)
+	}
+	if spec.Attribution != "Use Example attribution." {
+		t.Fatalf("Attribution = %q", spec.Attribution)
+	}
+}
+
+func TestTransitlandFeedsRequestUsesHeaderAuthAndLicenseFilters(t *testing.T) {
+	req, err := transitlandFeedsRequest(
+		"https://transit.land/api/v2/rest",
+		"test-key",
+		countryBBox{minLon: 1, minLat: 2, maxLon: 3, maxLat: 4},
+		42,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := req.Header.Get("apikey"); got != "test-key" {
+		t.Fatalf("apikey header = %q", got)
+	}
+	if strings.Contains(req.URL.String(), "test-key") {
+		t.Fatalf("request URL must not contain API key material: %q", req.URL.String())
+	}
+	values, err := url.ParseQuery(req.URL.RawQuery)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]string{
+		"spec":                           "gtfs",
+		"fetch_error":                    "false",
+		"bbox":                           "1,2,3,4",
+		"after":                          "42",
+		"license_redistribution_allowed": "exclude_no",
+		"license_create_derived_product": "exclude_no",
+		"license_commercial_use_allowed": "exclude_no",
+	} {
+		if got := values.Get(key); got != want {
+			t.Fatalf("%s = %q, want %q", key, got, want)
+		}
 	}
 }

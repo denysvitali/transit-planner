@@ -90,6 +90,10 @@ Sources are open and license-tagged:
   against). The fetcher can also use this catalog directly with `-complete`
   to build fuller no-key country bundles for fragmented countries such as
   Japan and Italy.
+- **[Transitland REST API](https://www.transit.land/documentation/rest-api/feeds)** —
+  authenticated feed discovery and latest-version downloads. Use
+  `TRANSITLAND_API_KEY` with `-complete-source transitland`; the key is sent in
+  the `apikey` header and is not written to manifests.
 - **[ODPT public bucket](https://www.odpt.org)** — `api-public.odpt.org`
   hosts the Tokyo Metropolitan Bureau of Transportation feeds (CC-BY 4.0).
 - **[opentransportdata.swiss](https://opentransportdata.swiss)** — official
@@ -120,6 +124,7 @@ go run ./tool/fetch_gtfs -list -country JP -complete
 go run ./tool/fetch_gtfs -country JP -complete
 go run ./tool/fetch_gtfs -country IT -complete
 go run ./tool/fetch_gtfs -country CH -complete
+TRANSITLAND_API_KEY=... go run ./tool/fetch_gtfs -country JP -complete -complete-source transitland
 ```
 
 Japan still has important rail gaps: major private rail (JR, Tokyo Metro,
@@ -137,6 +142,7 @@ go run ./tool/fetch_gtfs -feed toei-train       # ~750 KB zip
 go run ./tool/fetch_gtfs -country CH            # fetch the Swiss national feed
 go run ./tool/fetch_gtfs -country IT            # fetch curated Italian feeds
 go run ./tool/fetch_gtfs -country JP -complete  # fetch active no-key JP feeds from Mobility Database
+TRANSITLAND_API_KEY=... go run ./tool/fetch_gtfs -country IT -complete -complete-source transitland
 ```
 
 Downloads land under `assets/real_gtfs/<country>/<feed>/<feed>.zip` with a
