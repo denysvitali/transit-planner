@@ -2,9 +2,10 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'feed_catalog.dart';
+import 'transitland_catalog.dart';
 
 class NetworkSelection extends ChangeNotifier {
-  NetworkSelection._() : _selectedFeedIds = {kDefaultFeedId};
+  NetworkSelection._() : _selectedFeedIds = {};
 
   static final NetworkSelection instance = NetworkSelection._();
   static const String _prefsKey = 'selected_transitland_feed_ids';
@@ -13,9 +14,26 @@ class NetworkSelection extends ChangeNotifier {
   Set<String> _selectedFeedIds;
 
   Set<String> get selectedFeedIds => Set.unmodifiable(_selectedFeedIds);
+  bool get hasSelectedFeeds => _selectedFeeds.isNotEmpty;
 
   TransitFeed get feed {
     final feeds = _selectedFeeds;
+    if (feeds.isEmpty) {
+      return const TransitFeed(
+        id: 'no-transitland-feeds-selected',
+        name: 'No Transitland feeds selected',
+        description: 'Select one or more Transitland feeds in Settings.',
+        country: 'Global',
+        region: 'Transitland',
+        publisher: 'Transitland',
+        license: 'Transitland license metadata',
+        sourceUrl: kTransitlandRestBaseUrl,
+        localFileName: '',
+        attribution: 'No Transitland feed is currently selected.',
+        centerLatitude: 0,
+        centerLongitude: 0,
+      );
+    }
     if (feeds.length == 1) {
       return feeds.single;
     }
@@ -55,11 +73,11 @@ class NetworkSelection extends ChangeNotifier {
         .whereType<TransitFeed>()
         .where((feed) => !feed.isCollection)
         .toList(growable: false);
-    if (feeds.isNotEmpty) return feeds;
-    return [findFeedById(kDefaultFeedId) ?? kTransitFeeds.first];
+    return feeds;
   }
 
   Future<void> load() async {
+    await TransitlandCatalog.instance.load();
     final prefs = await SharedPreferences.getInstance();
     final feedIds = prefs.getStringList(_prefsKey);
     if (feedIds != null && feedIds.isNotEmpty) {
@@ -115,9 +133,6 @@ class NetworkSelection extends ChangeNotifier {
         .where((feed) => !feed.isCollection)
         .map((feed) => feed.id)
         .toSet();
-    if (validIds.isEmpty) {
-      validIds.add(kDefaultFeedId);
-    }
     if (setEquals(validIds, _selectedFeedIds)) return;
     _selectedFeedIds = validIds;
     notifyListeners();

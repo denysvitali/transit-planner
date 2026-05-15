@@ -6,43 +6,65 @@ import 'package:transit_planner/src/app_shell.dart';
 import 'package:transit_planner/src/feed_catalog.dart';
 import 'package:transit_planner/src/network_selection.dart';
 import 'package:transit_planner/src/settings_page.dart';
+import 'package:transit_planner/src/transitland_catalog.dart';
 
 void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
-    await NetworkSelection.instance.select(findFeedById(kDefaultFeedId)!);
+    TransitlandCatalog.instance.replaceForTesting([
+      _testFeed(
+        id: 'feed-one',
+        name: 'One City Transit',
+        country: 'AA',
+        region: 'Central',
+      ),
+      _testFeed(
+        id: 'feed-two',
+        name: 'Two City Transit',
+        country: 'AA',
+        region: 'Coast',
+      ),
+      _testFeed(
+        id: 'feed-three',
+        name: 'Three Rail',
+        country: 'BB',
+        region: 'Rail',
+      ),
+    ]);
+    await NetworkSelection.instance.setSelectedFeedIds(const []);
   });
 
-  testWidgets('settings selects Transitland feeds by country and feed', (
-    tester,
-  ) async {
-    await tester.pumpWidget(const MaterialApp(home: SettingsPage()));
+  testWidgets(
+    'settings selects runtime Transitland feeds by country and feed',
+    (tester) async {
+      await tester.pumpWidget(const MaterialApp(home: SettingsPage()));
 
-    expect(find.text('Transitland feeds'), findsOneWidget);
-    expect(find.widgetWithText(CheckboxListTile, 'Italy (IT)'), findsOneWidget);
+      expect(find.text('Transitland feeds'), findsOneWidget);
+      expect(find.widgetWithText(CheckboxListTile, 'AA'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(CheckboxListTile, 'Italy (IT)'));
-    await tester.pump();
+      await tester.tap(find.widgetWithText(CheckboxListTile, 'AA'));
+      await tester.pump();
 
-    expect(NetworkSelection.instance.selectedFeedIds, contains('it-milan-atm'));
-    expect(NetworkSelection.instance.selectedFeedIds, contains('it-rome'));
+      expect(NetworkSelection.instance.selectedFeedIds, contains('feed-one'));
+      expect(NetworkSelection.instance.selectedFeedIds, contains('feed-two'));
 
-    await tester.scrollUntilVisible(
-      find.widgetWithText(CheckboxListTile, 'Rome public transport GTFS'),
-      500,
-      maxScrolls: 50,
-    );
-    await tester.tap(
-      find.widgetWithText(CheckboxListTile, 'Rome public transport GTFS'),
-    );
-    await tester.pump();
+      await tester.scrollUntilVisible(
+        find.widgetWithText(CheckboxListTile, 'Two City Transit'),
+        500,
+        maxScrolls: 50,
+      );
+      await tester.tap(
+        find.widgetWithText(CheckboxListTile, 'Two City Transit'),
+      );
+      await tester.pump();
 
-    expect(NetworkSelection.instance.selectedFeedIds, contains('it-milan-atm'));
-    expect(
-      NetworkSelection.instance.selectedFeedIds,
-      isNot(contains('it-rome')),
-    );
-  });
+      expect(NetworkSelection.instance.selectedFeedIds, contains('feed-one'));
+      expect(
+        NetworkSelection.instance.selectedFeedIds,
+        isNot(contains('feed-two')),
+      );
+    },
+  );
 
   testWidgets('logs open as a settings sub-view and back returns to settings', (
     tester,
@@ -101,4 +123,27 @@ void main() {
     expect(find.widgetWithText(AppBar, 'Settings'), findsOneWidget);
     expect(find.widgetWithText(ListTile, 'Logs'), findsOneWidget);
   });
+}
+
+TransitFeed _testFeed({
+  required String id,
+  required String name,
+  required String country,
+  required String region,
+}) {
+  return TransitFeed(
+    id: id,
+    name: name,
+    description: '$name description',
+    country: country,
+    region: region,
+    publisher: '$name publisher',
+    license: 'License',
+    sourceUrl:
+        'https://transit.land/api/v2/rest/feeds/$id/download_latest_feed_version',
+    localFileName: '$id.zip',
+    attribution: '$name attribution',
+    centerLatitude: 1,
+    centerLongitude: 2,
+  );
 }

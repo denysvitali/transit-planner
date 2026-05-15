@@ -7,7 +7,7 @@
 //   - bool   goFfiSupported  — true when the current platform can load the
 //                              native library.
 //   - Future<LocalTransitRouter> openToeiRouter() — legacy helper that opens
-//     the app's default feed through the FFI and returns a router whose
+//     the current Transitland feed selection and returns a router whose
 //     `route` / `stops` calls go through the Go engine.
 import 'dart:convert';
 import 'dart:ffi';
@@ -24,14 +24,15 @@ import 'feed_load_progress.dart';
 import 'local_router.dart';
 import 'models.dart';
 import 'feed_catalog.dart';
+import 'network_selection.dart';
+import 'transitland_api_key.dart';
 
 const String _kFeedCacheDir = 'gtfs';
-const String _transitlandApiKey = String.fromEnvironment('TRANSITLAND_API_KEY');
 
 Future<LocalTransitRouter> openToeiRouter({
   void Function(FeedLoadProgress progress)? onProgress,
 }) async =>
-    openFeedRouter(findFeedById(kDefaultFeedId)!, onProgress: onProgress);
+    openFeedRouter(NetworkSelection.instance.feed, onProgress: onProgress);
 
 Future<LocalTransitRouter> openFeedRouter(
   TransitFeed feed, {
@@ -242,13 +243,13 @@ Future<void> _downloadFeed(
     final uri = Uri.parse(feed.sourceUrl);
     final request = await client.getUrl(uri);
     if (_isTransitlandDownload(uri)) {
-      if (_transitlandApiKey.isEmpty) {
+      final transitlandApiKey = await loadTransitlandApiKey();
+      if (transitlandApiKey.isEmpty) {
         throw StateError(
-          'TRANSITLAND_API_KEY must be provided with --dart-define to '
-          'download Transitland feeds.',
+          'TRANSITLAND_API_KEY must be provided to download Transitland feeds.',
         );
       }
-      request.headers.set('apikey', _transitlandApiKey);
+      request.headers.set('apikey', transitlandApiKey);
     }
     final result = await request.close();
     if (result.statusCode < 200 || result.statusCode >= 300) {

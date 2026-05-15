@@ -6,6 +6,7 @@ import 'app_log.dart';
 import 'feed_catalog.dart';
 import 'network_selection.dart';
 import 'theme.dart';
+import 'transitland_catalog.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -151,16 +152,35 @@ class LogsPage extends StatelessWidget {
 
 const _logLevels = {AppLogLevel.warning, AppLogLevel.error};
 
-class _NetworkSection extends StatelessWidget {
+class _NetworkSection extends StatefulWidget {
   const _NetworkSection();
+
+  @override
+  State<_NetworkSection> createState() => _NetworkSectionState();
+}
+
+class _NetworkSectionState extends State<_NetworkSection> {
+  @override
+  void initState() {
+    super.initState();
+    final catalog = TransitlandCatalog.instance;
+    if (!catalog.hasLoaded && !catalog.isLoading) {
+      catalog.load();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return ListenableBuilder(
-      listenable: NetworkSelection.instance,
+      listenable: Listenable.merge([
+        NetworkSelection.instance,
+        TransitlandCatalog.instance,
+      ]),
       builder: (context, _) {
+        final catalog = TransitlandCatalog.instance;
         final selectedFeedIds = NetworkSelection.instance.selectedFeedIds;
+        final groupedFeeds = _groupedSelectableFeeds();
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -171,7 +191,50 @@ class _NetworkSection extends StatelessWidget {
               ),
             ),
             const SizedBox(height: AppSpacing.s),
-            for (final country in _groupedSelectableFeeds().entries) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _catalogStatus(catalog),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: catalog.isLoading
+                      ? null
+                      : () => TransitlandCatalog.instance.load(
+                          forceRefresh: true,
+                        ),
+                  icon: const Icon(Icons.sync),
+                  label: const Text('Refresh'),
+                ),
+              ],
+            ),
+            if (catalog.error != null) ...[
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                catalog.error!,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+              ),
+            ],
+            if (catalog.isLoading && groupedFeeds.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: AppSpacing.m),
+                child: LinearProgressIndicator(),
+              )
+            else if (groupedFeeds.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.m),
+                child: Text(
+                  'No Transitland feeds are loaded yet.',
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ),
+            for (final country in groupedFeeds.entries) ...[
               CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
                 tristate: true,
@@ -252,6 +315,24 @@ class _FeedOption extends StatelessWidget {
   }
 }
 
+String _catalogStatus(TransitlandCatalog catalog) {
+  final count = catalog.feeds.length;
+  if (catalog.isLoading && count == 0) {
+    return 'Loading Transitland feed catalog...';
+  }
+  if (catalog.isLoading) {
+    return 'Refreshing $count Transitland feeds...';
+  }
+  if (count == 0) {
+    return 'Loaded feeds: 0';
+  }
+  final updatedAt = catalog.updatedAt;
+  if (updatedAt == null) {
+    return 'Loaded feeds: $count';
+  }
+  return 'Loaded feeds: $count | Updated ${updatedAt.toLocal()}';
+}
+
 Map<String, Map<String, List<TransitFeed>>> _groupedSelectableFeeds() {
   final grouped = <String, Map<String, List<TransitFeed>>>{};
   for (final feed in selectableTransitFeeds().where(
@@ -316,9 +397,7 @@ class _AboutSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final coverageFeed =
-        findFeedById('transitland-coverage') ?? findFeedById(kDefaultFeedId)!;
-    final attributionFeeds = componentFeedsFor(coverageFeed);
+    final loadedCount = TransitlandCatalog.instance.feeds.length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -329,42 +408,27 @@ class _AboutSection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.s),
-        Text(coverageFeed.name, style: theme.textTheme.titleMedium),
+        Text('Transitland runtime catalog', style: theme.textTheme.titleMedium),
         const SizedBox(height: AppSpacing.xs),
         Text(
-          coverageFeed.description,
+          'Feeds are discovered from the Transitland REST API at runtime and '
+          'cached locally. No app-maintained GTFS feed list is used.',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
         const SizedBox(height: AppSpacing.xs),
         Text(
-          'Feeds are shown for attribution and diagnostics. The app does not '
-          'download this whole coverage list on startup.',
+          'Loaded Transitland feeds: $loadedCount. Feed downloads use '
+          'Transitland static GTFS download endpoints.',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
         const SizedBox(height: AppSpacing.xs),
-        ...attributionFeeds.map(
-          (feed) => Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.s),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(feed.name, style: theme.textTheme.titleSmall),
-                const SizedBox(height: AppSpacing.xs),
-                SelectableText(
-                  feed.attribution,
-                  style: theme.textTheme.bodySmall,
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: AppSpacing.xs),
         Text(
-          'Licences and terms are listed in the same order as the catalog.',
+          'Licences and attribution come from Transitland feed metadata and '
+          'vary by publisher.',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),

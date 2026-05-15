@@ -1,142 +1,68 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:transit_planner/src/feed_catalog.dart';
+import 'package:transit_planner/src/transitland_catalog.dart';
 
 void main() {
-  test('app can start bundled and opt into Transitland coverage', () {
-    final defaultFeed = findFeedById(kDefaultFeedId);
-    final transitland = findFeedById('transitland-coverage');
+  test('runtime catalog starts without committed feeds', () {
+    replaceTransitFeedsForRuntime(const []);
 
-    expect(defaultFeed, isNotNull);
-    expect(defaultFeed!.id, 'toei-train');
-    expect(defaultFeed.isBundled, isTrue);
-    expect(transitland, isNotNull);
-    expect(transitland!.isCollection, isTrue);
-    expect(appNetworkFeeds().first.id, 'transitland-coverage');
-    expect(appNetworkFeeds(), contains(transitland));
+    expect(kTransitFeeds, isEmpty);
+    expect(selectableTransitFeeds(), isEmpty);
+  });
+
+  test('Transitland feed JSON becomes a downloadable runtime feed', () {
+    final feed = transitFeedFromTransitlandJson({
+      'id': 123,
+      'onestop_id': 'f-example~jp',
+      'name': 'Example Transit',
+      'associated_operators': [
+        {'name': 'Example Operator'},
+      ],
+      'license': {
+        'spdx_identifier': 'CC-BY-4.0',
+        'attribution_text': 'Example attribution',
+      },
+      'feed_state': {
+        'feed_version': {
+          'geometry': {
+            'type': 'Polygon',
+            'coordinates': [
+              [
+                [136.0, 36.0],
+                [138.0, 36.0],
+                [138.0, 38.0],
+                [136.0, 38.0],
+                [136.0, 36.0],
+              ],
+            ],
+          },
+        },
+      },
+    });
+
+    expect(feed, isNotNull);
+    expect(feed!.id, 'transitland-f-example-jp');
+    expect(feed.country, 'JP');
+    expect(feed.publisher, 'Example Operator');
+    expect(feed.license, 'CC-BY-4.0');
+    expect(feed.attribution, 'Example attribution');
+    expect(feed.centerLatitude, 37);
+    expect(feed.centerLongitude, 137);
     expect(
-      selectableTransitFeeds().map((feed) => feed.id),
-      containsAll(['transitland-coverage', 'it-rome', 'toei-train']),
-    );
-    expect(
-      componentFeedsFor(transitland).map((feed) => feed.id),
-      containsAll([
-        'ch-aggregate-2026',
-        'it-rome',
-        'it-milan-atm',
-        'toei-train',
-        'toei-bus',
-        'kanazawa-flatbus',
-      ]),
+      feed.sourceUrl,
+      'https://transit.land/api/v2/rest/feeds/f-example~jp/download_latest_feed_version',
     );
   });
 
-  test('country network expands to concrete feeds', () {
-    final japan = findFeedById('jp-public-no-key');
-    final switzerland = findFeedById('ch-national');
-    final italy = findFeedById('it-public-regional');
+  test('Transitland discovery URI uses license filters', () {
+    final uri = transitlandFeedsUri(after: 42);
 
-    expect(japan, isNotNull);
-    expect(japan!.isCollection, isTrue);
-    expect(
-      componentFeedsFor(japan).map((feed) => feed.id),
-      containsAll([
-        'toei-train',
-        'toei-bus',
-        'kanazawa-flatbus',
-        'kanazawa-hakusan-meguru',
-        'kanazawa-tsubata-bus',
-        'jbda-kaetsunou-kaetsunouippan',
-        'jbda-chitetsu-chitetsushinaidensha',
-        'kobe-shiokaze',
-        'himeji-ieshima',
-        'takarazuka-runrunbus',
-        'nishinomiya-sakurayamanami',
-        'yamatokoriyama-kingyobus',
-        'rinkan-koyasan',
-        'jbda-akashicity-tacobustacobusmini',
-        'jbda-higashiomicity-higasiohmisicommunitybus',
-      ]),
-    );
-    expect(componentFeedsFor(switzerland!).map((feed) => feed.id), [
-      'ch-aggregate-2026',
-    ]);
-    expect(
-      componentFeedsFor(italy!).map((feed) => feed.id),
-      containsAll([
-        'it-rome',
-        'it-milan-atm',
-        'it-lombardy-trenord',
-        'it-tuscany-autolinee',
-        'it-trentino-extraurban',
-      ]),
-    );
-  });
-
-  test('regional networks include Transitland-discovered feeds', () {
-    final hokuriku = findFeedById('kanazawa-region')!;
-    final kansai = findFeedById('kansai-public-no-key')!;
-
-    expect(
-      componentFeedsFor(hokuriku).map((feed) => feed.id),
-      containsAll([
-        'jbda-kaetsunou-kaetsunouippan',
-        'jbda-nonoichicity-communitybus',
-        'jbda-chitetsu-chitetsubus',
-        'jbda-manyosen-manyosen',
-      ]),
-    );
-    expect(
-      componentFeedsFor(kansai).map((feed) => feed.id),
-      containsAll([
-        'jbda-akashicity-tacobustacobusmini',
-        'jbda-kakogawacity-kakobuskakobusmini',
-        'jbda-andotown-andocombus',
-        'jbda-omihachimancity-akakonbus',
-      ]),
-    );
-  });
-
-  test('Italian regional networks expand to official component feeds', () {
-    final tuscany = findFeedById('it-tuscany-public')!;
-    final trentino = findFeedById('it-trentino-public')!;
-
-    expect(
-      componentFeedsFor(tuscany).map((feed) => feed.id),
-      containsAll([
-        'it-tuscany-trenitalia',
-        'it-tuscany-tft',
-        'it-tuscany-toremar',
-        'it-tuscany-gest',
-        'it-tuscany-at-nonschool',
-      ]),
-    );
-    expect(componentFeedsFor(trentino).map((feed) => feed.id), [
-      'it-trentino-urban',
-      'it-trentino-extraurban',
-    ]);
-  });
-
-  test('single provider feed expands to itself', () {
-    final toeiTrain = findFeedById('toei-train')!;
-
-    expect(componentFeedsFor(toeiTrain), [toeiTrain]);
-  });
-
-  test('downloadable feeds use Transitland REST download endpoints', () {
-    for (final feed in selectableTransitFeeds().where(
-      (feed) => !feed.isCollection,
-    )) {
-      expect(
-        feed.sourceUrl,
-        startsWith('https://transit.land/api/v2/rest/feeds/'),
-        reason: '${feed.id} must download through Transitland',
-      );
-    }
-  });
-
-  test('Hakusan Meguru feed uses Transitland source record', () {
-    final meguru = findFeedById('kanazawa-hakusan-meguru')!;
-
-    expect(meguru.sourceUrl, contains('f-白山市コミュニティバスめぐーる'));
+    expect(uri.path, '/api/v2/rest/feeds');
+    expect(uri.queryParameters['spec'], 'gtfs');
+    expect(uri.queryParameters['fetch_error'], 'false');
+    expect(uri.queryParameters['license_redistribution_allowed'], 'exclude_no');
+    expect(uri.queryParameters['license_create_derived_product'], 'exclude_no');
+    expect(uri.queryParameters['license_commercial_use_allowed'], 'exclude_no');
+    expect(uri.queryParameters['after'], '42');
   });
 }

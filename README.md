@@ -77,38 +77,20 @@ The script needs `rsvg-convert` (Debian/Ubuntu: `librsvg2-bin`) and Pillow
 
 ## Transit data
 
-The app opens the bundled default feed on startup so launch never downloads
-extra feeds before the user asks for them. Settings lists Transitland feeds with
-country, region, and feed-level checkboxes; the checked feeds are loaded as one
-merged local GTFS router network. App-catalog downloads use Transitland REST
-feed download endpoints only. Pass a Transitland API key at build/run time with
-`--dart-define=TRANSITLAND_API_KEY=...`; the key is sent as an `apikey` header
-and is not stored in feed URLs.
+The app discovers GTFS feeds from the Transitland REST API at runtime and
+caches the discovered catalog locally. Settings lists the loaded Transitland
+feeds with country, region, and feed-level checkboxes; the checked feeds are
+loaded as one merged local GTFS router network. Feed downloads use Transitland
+REST feed download endpoints only. Pass a Transitland API key at build/run time
+with `--dart-define=TRANSITLAND_API_KEY=...`, set `TRANSITLAND_API_KEY` in the
+environment, or put it in a local uncommitted `.env`; the key is sent as an
+`apikey` header and is not stored in feed URLs.
 
 Sources are Transitland-backed and license-tagged:
 
-- **[Transitland REST API](https://www.transit.land/documentation/rest-api/feeds)** —
-  authenticated feed discovery and latest-version downloads. Use
-  `TRANSITLAND_API_KEY` with `-complete-source transitland`; the key is sent in
-  the `apikey` header and is not written to manifests.
-- **[Transitland Atlas](https://github.com/transitland/transitland-atlas)** —
-  public source-feed registry used to identify the feed Onestop IDs in the app
-  catalog.
-
-Currently catalogued:
-
-| Country | Region | Feeds |
-|---------|--------|-------|
-| CH | Nationwide | `ch-aggregate-2026` |
-| IT | Lazio | `it-rome` |
-| IT | Lombardy | `it-milan-atm`, `it-lombardy-trenord` |
-| IT | Tuscany | `it-tuscany-autolinee`, `it-tuscany-trenitalia`, `it-tuscany-tft`, `it-tuscany-toremar`, `it-tuscany-gest`, `it-tuscany-colbus-school`, `it-tuscany-colbus-nonschool`, `it-tuscany-at-school`, `it-tuscany-at-nonschool` |
-| IT | Trentino-Alto Adige | `it-trentino-urban`, `it-trentino-extraurban` |
-| JP | Tokyo | `toei-bus`, `toei-train` |
-| JP | Hyogo | `kobe-shiokaze`, `himeji-ieshima`, `takarazuka-runrunbus`, `nishinomiya-sakurayamanami` |
-| JP | Nara | `yamatokoriyama-kingyobus` |
-| JP | Wakayama | `rinkan-koyasan` |
-| JP | Ishikawa | `kanazawa-flatbus`, `kanazawa-hakusan-meguru`, `kanazawa-tsubata-bus` |
+- **[Transitland REST API](https://www.transit.land/documentation/rest-api/feeds)** -
+  authenticated feed discovery and latest-version downloads. The app does not
+  carry a manually-maintained feed inventory.
 
 For fuller country builds, use Transitland discovery:
 
@@ -118,20 +100,13 @@ TRANSITLAND_API_KEY=... go run ./tool/fetch_gtfs -country IT -complete -complete
 TRANSITLAND_API_KEY=... go run ./tool/fetch_gtfs -country CH -complete -complete-source transitland
 ```
 
-Japan still has important rail gaps: major private rail (JR, Tokyo Metro,
-Hankyu, Hanshin, Nankai, Keihan, Kintetsu) and the Shinkansen are absent unless
-they are available through Transitland feed records that the app catalog
-includes.
+Coverage depends on the current Transitland feed records and the feeds selected
+locally in Settings.
 
 Licences vary per feed — see [`LICENSES_THIRD_PARTY.md`](LICENSES_THIRD_PARTY.md)
 and each downloaded `MANIFEST.json` for the exact attribution string.
 
 ```sh
-go run ./tool/fetch_gtfs -list                  # show every known feed
-go run ./tool/fetch_gtfs -list -country JP      # filter to one country
-go run ./tool/fetch_gtfs -feed toei-train       # ~750 KB zip
-go run ./tool/fetch_gtfs -country CH            # fetch the Swiss national feed
-go run ./tool/fetch_gtfs -country IT            # fetch curated Italian feeds
 TRANSITLAND_API_KEY=... go run ./tool/fetch_gtfs -country IT -complete -complete-source transitland
 ```
 
@@ -146,7 +121,7 @@ single SQLite database while preserving feed attribution:
 
 ```sh
 go run ./tool/build_gtfs_db -db /tmp/gtfs.sqlite \
-  -feed toei-train=assets/sample_toei_train/Toei-Train-GTFS.zip \
+  -feed sample-toei=assets/sample_toei_train/Toei-Train-GTFS.zip \
   -feed sample-bern=assets/sample_gtfs
 ```
 

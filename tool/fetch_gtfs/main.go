@@ -1,15 +1,10 @@
-// fetch_gtfs downloads real-world GTFS feeds from no-key public endpoints.
+// fetch_gtfs downloads real-world GTFS feeds from external catalogs.
 //
 // The catalog is organised by ISO 3166-1 alpha-2 country code so that callers
 // can pull every feed for a country in one shot:
 //
-//	go run ./tool/fetch_gtfs -list                       # show known feeds
-//	go run ./tool/fetch_gtfs -list -country JP           # show only Japan
-//	go run ./tool/fetch_gtfs -feed toei-train            # one feed
-//	go run ./tool/fetch_gtfs -country IT                 # curated Italian feeds
 //	go run ./tool/fetch_gtfs -country JP -complete       # active no-key JP feeds from Mobility Database
 //	go run ./tool/fetch_gtfs -country JP -complete -complete-source transitland
-//	go run ./tool/fetch_gtfs -feed toei-bus -out my/dir  # custom output
 //
 // Downloaded zips land in assets/real_gtfs/<country>/<feed>/<feed>.zip with a
 // MANIFEST.json next to each one (source URL, fetch timestamp, SHA-256).
@@ -25,17 +20,8 @@
 //     catalog used by -complete -complete-source transitland. Set
 //     TRANSITLAND_API_KEY in the environment; the key is sent as a header and
 //     is never written to manifests.
-//   - ODPT public bucket (api-public.odpt.org) — Tokyo Metropolitan Bureau of
-//     Transportation feeds (CC-BY 4.0).
-//   - Official Swiss and Italian regional/city portals for the curated CH and
-//     IT catalog entries.
 //
-// Major Japanese rail operators (JR East/West/Central, Tokyo Metro, Hankyu,
-// Hanshin, Nankai, Keihan, Kintetsu, Shinkansen) only publish through ODPT's
-// authenticated developer API. They are intentionally absent from this
-// no-key catalog. Plan inter-city Tokyo-Osaka trips by combining the
-// no-key feeds below with router.Merge, accepting that long-distance rail
-// will be missing until those keys are wired in.
+// The repo no longer carries an app-maintained static feed inventory.
 package main
 
 import (

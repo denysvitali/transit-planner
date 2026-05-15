@@ -94,6 +94,28 @@ class _HomePageState extends State<HomePage> {
   Future<void> _openFeed(TransitFeed feed) async {
     final seq = ++_feedOpenSeq;
     _planSeq++;
+    if (!NetworkSelection.instance.hasSelectedFeeds) {
+      if (mounted) {
+        setState(() {
+          _activeFeed = feed;
+          _activeFeedIds = NetworkSelection.instance.selectedFeedIds;
+          _router = null;
+          _stops = const [];
+          _origin = null;
+          _destination = null;
+          _initializing = false;
+          _loading = false;
+          _loadError = 'Select one or more Transitland feeds in Settings.';
+          _feedProgress = null;
+          _itineraries = const [];
+          _selectedItineraryIndex = 0;
+          _markerSymbols.clear();
+          _routeLines.clear();
+          _stopCircles.clear();
+        });
+      }
+      return;
+    }
     if (mounted) {
       setState(() {
         _activeFeed = feed;
