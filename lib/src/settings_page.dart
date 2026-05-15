@@ -93,8 +93,9 @@ class _AboutSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final activeFeed = findFeedById(kDefaultFeedId)!;
-    final attributionFeeds = componentFeedsFor(activeFeed);
+    final coverageFeed =
+        findFeedById('transitland-coverage') ?? findFeedById(kDefaultFeedId)!;
+    final attributionFeeds = componentFeedsFor(coverageFeed);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -105,10 +106,18 @@ class _AboutSection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: AppSpacing.s),
-        Text(activeFeed.name, style: theme.textTheme.titleMedium),
+        Text(coverageFeed.name, style: theme.textTheme.titleMedium),
         const SizedBox(height: AppSpacing.xs),
         Text(
-          activeFeed.description,
+          coverageFeed.description,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          'Feeds are shown for attribution and diagnostics. The app does not '
+          'download this whole coverage list on startup.',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
