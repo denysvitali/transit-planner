@@ -38,18 +38,30 @@ class SettingsPage extends StatelessWidget {
               padding: const EdgeInsets.all(AppSpacing.m),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
-                  const _NetworkSectionHeader(),
-                ]),
-              ),
-            ),
-            const SliverPadding(
-              padding: EdgeInsets.symmetric(horizontal: AppSpacing.m),
-              sliver: _NetworkFeedSliverList(),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.all(AppSpacing.m),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
+                  ListenableBuilder(
+                    listenable: Listenable.merge([
+                      TransitlandCatalog.instance,
+                      NetworkSelection.instance,
+                    ]),
+                    builder: (context, _) {
+                      final catalog = TransitlandCatalog.instance;
+                      final selectedCount =
+                          NetworkSelection.instance.selectedFeedIds.length;
+                      final totalCount = catalog.feeds.length;
+                      return ListTile(
+                        leading: const Icon(Icons.public_outlined),
+                        title: const Text('Select feeds'),
+                        subtitle: Text(
+                          totalCount == 0
+                              ? 'No feeds loaded'
+                              : '$selectedCount of $totalCount feeds selected',
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        contentPadding: EdgeInsets.zero,
+                        onTap: () => context.push('/settings/feeds'),
+                      );
+                    },
+                  ),
                   const SizedBox(height: AppSpacing.l),
                   Text(
                     'Developer options',
@@ -251,338 +263,6 @@ IconData _levelIcon(AppLogLevel level) => switch (level) {
   AppLogLevel.error => Icons.error_outline,
 };
 
-class _NetworkSectionHeader extends StatefulWidget {
-  const _NetworkSectionHeader();
-
-  @override
-  State<_NetworkSectionHeader> createState() => _NetworkSectionHeaderState();
-}
-
-class _NetworkSectionHeaderState extends State<_NetworkSectionHeader> {
-  @override
-  void initState() {
-    super.initState();
-    final catalog = TransitlandCatalog.instance;
-    if (!catalog.hasLoaded && !catalog.isLoading) {
-      catalog.load();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return ListenableBuilder(
-      listenable: TransitlandCatalog.instance,
-      builder: (context, _) {
-        final catalog = TransitlandCatalog.instance;
-        final groupedFeeds = _groupedSelectableFeeds();
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Transitland feeds',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.s),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    _catalogStatus(catalog),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: catalog.isLoading
-                      ? null
-                      : () => TransitlandCatalog.instance.load(
-                          forceRefresh: true,
-                        ),
-                  icon: const Icon(Icons.sync),
-                  label: const Text('Refresh'),
-                ),
-              ],
-            ),
-            if (catalog.error != null) ...[
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                catalog.error!,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.error,
-                ),
-              ),
-            ],
-            if (catalog.isLoading && groupedFeeds.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: AppSpacing.m),
-                child: LinearProgressIndicator(),
-              )
-            else if (groupedFeeds.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: AppSpacing.m),
-                child: Text(
-                  'No Transitland feeds are loaded yet.',
-                  style: theme.textTheme.bodyMedium,
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _NetworkFeedSliverList extends StatelessWidget {
-  const _NetworkFeedSliverList();
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: TransitlandCatalog.instance,
-      builder: (context, _) {
-        final groupedFeeds = _groupedSelectableFeeds();
-        if (groupedFeeds.isEmpty) {
-          return const SliverToBoxAdapter(child: SizedBox.shrink());
-        }
-
-        final items = <_FeedListItem>[];
-        for (final country in groupedFeeds.entries) {
-          items.add(_CountryItem(country.key, country.value));
-          for (final region in country.value.entries) {
-            items.add(_RegionItem(region.key, region.value));
-            for (final feed in region.value) {
-              items.add(_FeedItem(feed));
-            }
-          }
-        }
-
-        return SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) => _buildItem(context, items[index]),
-            childCount: items.length,
-          ),
-        );
-      },
-    );
-  }
-}
-
-sealed class _FeedListItem {
-  const _FeedListItem();
-}
-
-final class _CountryItem extends _FeedListItem {
-  const _CountryItem(this.country, this.regions);
-  final String country;
-  final Map<String, List<TransitFeed>> regions;
-}
-
-final class _RegionItem extends _FeedListItem {
-  const _RegionItem(this.region, this.feeds);
-  final String region;
-  final List<TransitFeed> feeds;
-}
-
-final class _FeedItem extends _FeedListItem {
-  const _FeedItem(this.feed);
-  final TransitFeed feed;
-}
-
-Widget _buildItem(BuildContext context, _FeedListItem item) {
-  return switch (item) {
-    _CountryItem(:final country, :final regions) => _CountryCheckbox(
-        country: country,
-        regions: regions,
-      ),
-    _RegionItem(:final region, :final feeds) => _RegionCheckbox(
-        region: region,
-        feeds: feeds,
-      ),
-    _FeedItem(:final feed) => _FeedCheckbox(feed: feed),
-  };
-}
-
-class _CountryCheckbox extends StatelessWidget {
-  const _CountryCheckbox({required this.country, required this.regions});
-
-  final String country;
-  final Map<String, List<TransitFeed>> regions;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: NetworkSelection.instance,
-      builder: (context, _) {
-        final feedIds = regions.values.expand((f) => f).map((f) => f.id);
-        final value = _selectionValue(
-          feedIds,
-          NetworkSelection.instance.selectedFeedIds,
-        );
-        return CheckboxListTile(
-          contentPadding: EdgeInsets.zero,
-          tristate: true,
-          value: value,
-          title: Text(
-            _countryLabel(country),
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-          ),
-          onChanged: (value) => NetworkSelection.instance.setFeedsSelected(
-            feedIds,
-            value ?? true,
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _RegionCheckbox extends StatelessWidget {
-  const _RegionCheckbox({required this.region, required this.feeds});
-
-  final String region;
-  final List<TransitFeed> feeds;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: NetworkSelection.instance,
-      builder: (context, _) {
-        final feedIds = feeds.map((f) => f.id);
-        final value = _selectionValue(
-          feedIds,
-          NetworkSelection.instance.selectedFeedIds,
-        );
-        return CheckboxListTile(
-          contentPadding: const EdgeInsets.only(left: AppSpacing.m),
-          tristate: true,
-          dense: true,
-          value: value,
-          title: Text(
-            region,
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-          ),
-          onChanged: (value) => NetworkSelection.instance.setFeedsSelected(
-            feedIds,
-            value ?? true,
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _FeedCheckbox extends StatelessWidget {
-  const _FeedCheckbox({required this.feed});
-
-  final TransitFeed feed;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: NetworkSelection.instance,
-      builder: (context, _) {
-        final selected = NetworkSelection.instance.selectedFeedIds.contains(
-          feed.id,
-        );
-        return CheckboxListTile(
-          contentPadding: const EdgeInsets.only(left: AppSpacing.xl),
-          value: selected,
-          title: Text(feed.name),
-          subtitle: Text(feed.description),
-          secondary: const Icon(Icons.public),
-          onChanged: (value) => NetworkSelection.instance.setFeedSelected(
-            feed.id,
-            value ?? false,
-          ),
-        );
-      },
-    );
-  }
-}
-
-String _catalogStatus(TransitlandCatalog catalog) {
-  final count = catalog.feeds.length;
-  if (catalog.isLoading && count == 0) {
-    return 'Loading Transitland feed catalog...';
-  }
-  if (catalog.isLoading) {
-    return 'Refreshing $count Transitland feeds...';
-  }
-  if (count == 0) {
-    return 'Loaded feeds: 0';
-  }
-  final updatedAt = catalog.updatedAt;
-  if (updatedAt == null) {
-    return 'Loaded feeds: $count';
-  }
-  return 'Loaded feeds: $count | Updated ${updatedAt.toLocal()}';
-}
-
-Map<String, Map<String, List<TransitFeed>>> _groupedSelectableFeeds() {
-  final grouped = <String, Map<String, List<TransitFeed>>>{};
-  for (final feed in selectableTransitFeeds().where(
-    (feed) => !feed.isCollection,
-  )) {
-    final country = feed.country.isEmpty ? 'Other' : feed.country;
-    final region = feed.region.isEmpty ? 'Other' : feed.region;
-    grouped.putIfAbsent(country, () => <String, List<TransitFeed>>{});
-    grouped[country]!.putIfAbsent(region, () => <TransitFeed>[]);
-    grouped[country]![region]!.add(feed);
-  }
-
-  final countryKeys = grouped.keys.toList()
-    ..sort((a, b) {
-      if (a == 'Global') return -1;
-      if (b == 'Global') return 1;
-      return _countryLabel(a).compareTo(_countryLabel(b));
-    });
-  return {
-    for (final country in countryKeys)
-      country: {
-        for (final region
-            in (grouped[country]!.keys.toList()..sort(_compareRegionLabels)))
-          region: grouped[country]![region]!,
-      },
-  };
-}
-
-Iterable<String> _feedIdsForCountry(Map<String, List<TransitFeed>> regions) =>
-    regions.values.expand((feeds) => feeds).map((feed) => feed.id);
-
-bool? _selectionValue(Iterable<String> feedIds, Set<String> selectedFeedIds) {
-  final ids = feedIds.toList(growable: false);
-  final selectedCount = ids.where(selectedFeedIds.contains).length;
-  if (selectedCount == 0) return false;
-  if (selectedCount == ids.length) return true;
-  return null;
-}
-
-int _compareRegionLabels(String a, String b) {
-  const priority = {'Coverage': 0, 'Country': 1, 'Nationwide': 2};
-  final aPriority = priority[a] ?? 10;
-  final bPriority = priority[b] ?? 10;
-  if (aPriority != bPriority) return aPriority.compareTo(bPriority);
-  return a.compareTo(b);
-}
-
-String _countryLabel(String country) {
-  return switch (country) {
-    'CH' => 'Switzerland (CH)',
-    'IT' => 'Italy (IT)',
-    'JP' => 'Japan (JP)',
-    'Global' => 'Global',
-    _ => country,
-  };
-}
-
 /// About / attributions section.
 class _AboutSection extends StatelessWidget {
   const _AboutSection();
@@ -590,7 +270,6 @@ class _AboutSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final loadedCount = TransitlandCatalog.instance.feeds.length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -612,8 +291,7 @@ class _AboutSection extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.xs),
         Text(
-          'Loaded Transitland feeds: $loadedCount. Feed downloads use '
-          'Transitland static GTFS download endpoints.',
+          'Feed downloads use Transitland static GTFS download endpoints.',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),

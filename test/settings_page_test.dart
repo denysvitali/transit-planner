@@ -34,37 +34,17 @@ void main() {
     await NetworkSelection.instance.setSelectedFeedIds(const []);
   });
 
-  testWidgets(
-    'settings selects runtime Transitland feeds by country and feed',
-    (tester) async {
-      await tester.pumpWidget(const MaterialApp(home: SettingsPage()));
+  testWidgets('settings shows Select feeds tile with count', (tester) async {
+    await tester.pumpWidget(const MaterialApp(home: SettingsPage()));
 
-      expect(find.text('Transitland feeds'), findsOneWidget);
-      expect(find.widgetWithText(CheckboxListTile, 'AA'), findsOneWidget);
+    expect(find.widgetWithText(ListTile, 'Select feeds'), findsOneWidget);
+    expect(find.text('0 of 3 feeds selected'), findsOneWidget);
 
-      await tester.tap(find.widgetWithText(CheckboxListTile, 'AA'));
-      await tester.pump();
+    await NetworkSelection.instance.setSelectedFeedIds(const ['feed-one']);
+    await tester.pump();
 
-      expect(NetworkSelection.instance.selectedFeedIds, contains('feed-one'));
-      expect(NetworkSelection.instance.selectedFeedIds, contains('feed-two'));
-
-      await tester.scrollUntilVisible(
-        find.widgetWithText(CheckboxListTile, 'Two City Transit'),
-        500,
-        maxScrolls: 50,
-      );
-      await tester.tap(
-        find.widgetWithText(CheckboxListTile, 'Two City Transit'),
-      );
-      await tester.pump();
-
-      expect(NetworkSelection.instance.selectedFeedIds, contains('feed-one'));
-      expect(
-        NetworkSelection.instance.selectedFeedIds,
-        isNot(contains('feed-two')),
-      );
-    },
-  );
+    expect(find.text('1 of 3 feeds selected'), findsOneWidget);
+  });
 
   testWidgets('logs open as a settings sub-view and back returns to settings', (
     tester,
@@ -91,6 +71,10 @@ void main() {
                   path: '/settings',
                   builder: (context, state) => const SettingsPage(),
                   routes: [
+                    GoRoute(
+                      path: 'feeds',
+                      builder: (context, state) => const SizedBox.shrink(),
+                    ),
                     GoRoute(
                       path: 'logs',
                       builder: (context, state) => const LogsPage(),

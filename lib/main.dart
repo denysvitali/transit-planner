@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import 'src/app_log.dart';
 import 'src/app_shell.dart';
+import 'src/feed_selection_page.dart';
 import 'src/home_page.dart';
 import 'src/itinerary_detail_page.dart';
 import 'src/models.dart';
@@ -86,6 +87,10 @@ class _TransitPlannerAppState extends State<TransitPlannerApp> {
                   path: '/settings',
                   builder: (context, state) => const SettingsPage(),
                   routes: [
+                    GoRoute(
+                      path: 'feeds',
+                      builder: (context, state) => const FeedSelectionPage(),
+                    ),
                     GoRoute(
                       path: 'logs',
                       builder: (context, state) => const LogsPage(),
