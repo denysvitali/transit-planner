@@ -159,10 +159,25 @@ class TransitlandFeedClient {
 
     while (true) {
       pageCount++;
-      final response = await _httpClient.get(
-        transitlandFeedsUri(baseUrl: baseUrl, after: after),
-        headers: {'apikey': apiKey, 'User-Agent': 'transit-planner/0.1'},
-      );
+      const maxRetries = 3;
+      http.Response? response;
+      for (var attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          response = await _httpClient.get(
+            transitlandFeedsUri(baseUrl: baseUrl, after: after),
+            headers: {'apikey': apiKey, 'User-Agent': 'transit-planner/0.1'},
+          );
+          break;
+        } on http.ClientException {
+          if (attempt == maxRetries - 1) rethrow;
+          await Future.delayed(
+            Duration(milliseconds: 500 * (attempt + 1)),
+          );
+        }
+      }
+      if (response == null) {
+        throw StateError('Failed to fetch feeds after $maxRetries attempts');
+      }
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw StateError(
           'Transitland feed discovery failed: HTTP ${response.statusCode}',
@@ -478,7 +493,8 @@ String _feedKeyFromTransitFeed(TransitFeed feed) {
   final segments = sourceUri?.pathSegments ?? const <String>[];
   final feedSegmentIndex = segments.indexOf('feeds');
   if (feedSegmentIndex >= 0 && feedSegmentIndex + 1 < segments.length) {
-    return Uri.decodeComponent(segments[feedSegmentIndex + 1]);
+    // Path segments from Uri.pathSegments are already percent-decoded.
+    return segments[feedSegmentIndex + 1];
   }
   return feed.id.replaceFirst(RegExp(r'^transitland-'), '');
 }

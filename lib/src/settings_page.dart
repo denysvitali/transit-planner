@@ -32,54 +32,73 @@ class SettingsPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(AppSpacing.m),
-          children: [
-            const _NetworkSection(),
-            const SizedBox(height: AppSpacing.l),
-            Text(
-              'Developer options',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w800,
+        child: CustomScrollView(
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.all(AppSpacing.m),
+              sliver: SliverList(
+                delegate: SliverChildListDelegate([
+                  const _NetworkSectionHeader(),
+                ]),
               ),
             ),
-            const SizedBox(height: AppSpacing.s),
-            ListenableBuilder(
-              listenable: AppLogBuffer.instance,
-              builder: (context, _) {
-                final entries = AppLogBuffer.instance.entries;
-                final warnErr = entries
-                    .where(
-                      (e) =>
-                          e.level == AppLogLevel.warning ||
-                          e.level == AppLogLevel.error,
-                    )
-                    .length;
-                return ListTile(
-                  leading: const Icon(Icons.article_outlined),
-                  title: const Text('Logs'),
-                  subtitle: Text(
-                    entries.isEmpty
-                        ? 'No logs yet'
-                        : '${entries.length} log entr'
-                              '${entries.length == 1 ? 'y' : 'ies'}'
-                              '${warnErr == 0 ? '' : ' • $warnErr warning/error'}',
+            const SliverPadding(
+              padding: EdgeInsets.symmetric(horizontal: AppSpacing.m),
+              sliver: _NetworkFeedSliverList(),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.all(AppSpacing.m),
+              sliver: SliverList(
+                delegate: SliverChildListDelegate([
+                  const SizedBox(height: AppSpacing.l),
+                  Text(
+                    'Developer options',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                  trailing: const Icon(Icons.chevron_right),
-                  contentPadding: EdgeInsets.zero,
-                  onTap: () => context.push('/settings/logs'),
-                );
-              },
+                  const SizedBox(height: AppSpacing.s),
+                  ListenableBuilder(
+                    listenable: AppLogBuffer.instance,
+                    builder: (context, _) {
+                      final entries = AppLogBuffer.instance.entries;
+                      final warnErr = entries
+                          .where(
+                            (e) =>
+                                e.level == AppLogLevel.warning ||
+                                e.level == AppLogLevel.error,
+                          )
+                          .length;
+                      return ListTile(
+                        leading: const Icon(Icons.article_outlined),
+                        title: const Text('Logs'),
+                        subtitle: Text(
+                          entries.isEmpty
+                              ? 'No logs yet'
+                              : '${entries.length} log entr'
+                                    '${entries.length == 1 ? 'y' : 'ies'}'
+                                    '${warnErr == 0 ? '' : ' • $warnErr warning/error'}',
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        contentPadding: EdgeInsets.zero,
+                        onTap: () => context.push('/settings/logs'),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.copy_all_outlined),
+                    title: const Text('Copy diagnostic report'),
+                    subtitle: const Text(
+                      'Active feed, selected networks, and logs',
+                    ),
+                    contentPadding: EdgeInsets.zero,
+                    onTap: () => _copyDiagnostics(context),
+                  ),
+                  const SizedBox(height: AppSpacing.l),
+                  const _AboutSection(),
+                ]),
+              ),
             ),
-            ListTile(
-              leading: const Icon(Icons.copy_all_outlined),
-              title: const Text('Copy diagnostic report'),
-              subtitle: const Text('Active feed, selected networks, and logs'),
-              contentPadding: EdgeInsets.zero,
-              onTap: () => _copyDiagnostics(context),
-            ),
-            const SizedBox(height: AppSpacing.l),
-            const _AboutSection(),
           ],
         ),
       ),
@@ -232,14 +251,14 @@ IconData _levelIcon(AppLogLevel level) => switch (level) {
   AppLogLevel.error => Icons.error_outline,
 };
 
-class _NetworkSection extends StatefulWidget {
-  const _NetworkSection();
+class _NetworkSectionHeader extends StatefulWidget {
+  const _NetworkSectionHeader();
 
   @override
-  State<_NetworkSection> createState() => _NetworkSectionState();
+  State<_NetworkSectionHeader> createState() => _NetworkSectionHeaderState();
 }
 
-class _NetworkSectionState extends State<_NetworkSection> {
+class _NetworkSectionHeaderState extends State<_NetworkSectionHeader> {
   @override
   void initState() {
     super.initState();
@@ -253,13 +272,9 @@ class _NetworkSectionState extends State<_NetworkSection> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return ListenableBuilder(
-      listenable: Listenable.merge([
-        NetworkSelection.instance,
-        TransitlandCatalog.instance,
-      ]),
+      listenable: TransitlandCatalog.instance,
       builder: (context, _) {
         final catalog = TransitlandCatalog.instance;
-        final selectedFeedIds = NetworkSelection.instance.selectedFeedIds;
         final groupedFeeds = _groupedSelectableFeeds();
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -314,56 +329,6 @@ class _NetworkSectionState extends State<_NetworkSection> {
                   style: theme.textTheme.bodyMedium,
                 ),
               ),
-            for (final country in groupedFeeds.entries) ...[
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                tristate: true,
-                value: _selectionValue(
-                  _feedIdsForCountry(country.value),
-                  selectedFeedIds,
-                ),
-                title: Text(
-                  _countryLabel(country.key),
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                onChanged: (value) =>
-                    NetworkSelection.instance.setFeedsSelected(
-                      _feedIdsForCountry(country.value),
-                      value ?? true,
-                    ),
-              ),
-              for (final region in country.value.entries) ...[
-                CheckboxListTile(
-                  contentPadding: const EdgeInsets.only(left: AppSpacing.m),
-                  tristate: true,
-                  dense: true,
-                  value: _selectionValue(
-                    region.value.map((feed) => feed.id),
-                    selectedFeedIds,
-                  ),
-                  title: Text(
-                    region.key,
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  onChanged: (value) =>
-                      NetworkSelection.instance.setFeedsSelected(
-                        region.value.map((feed) => feed.id),
-                        value ?? true,
-                      ),
-                ),
-                for (final feed in region.value)
-                  _FeedOption(
-                    feed: feed,
-                    selected: selectedFeedIds.contains(feed.id),
-                    onChanged: (selected) => NetworkSelection.instance
-                        .setFeedSelected(feed.id, selected),
-                  ),
-              ],
-            ],
           ],
         );
       },
@@ -371,26 +336,174 @@ class _NetworkSectionState extends State<_NetworkSection> {
   }
 }
 
-class _FeedOption extends StatelessWidget {
-  const _FeedOption({
-    required this.feed,
-    required this.selected,
-    required this.onChanged,
-  });
-
-  final TransitFeed feed;
-  final bool selected;
-  final ValueChanged<bool> onChanged;
+class _NetworkFeedSliverList extends StatelessWidget {
+  const _NetworkFeedSliverList();
 
   @override
   Widget build(BuildContext context) {
-    return CheckboxListTile(
-      contentPadding: const EdgeInsets.only(left: AppSpacing.xl),
-      value: selected,
-      title: Text(feed.name),
-      subtitle: Text(feed.description),
-      secondary: const Icon(Icons.public),
-      onChanged: (value) => onChanged(value ?? false),
+    return ListenableBuilder(
+      listenable: TransitlandCatalog.instance,
+      builder: (context, _) {
+        final groupedFeeds = _groupedSelectableFeeds();
+        if (groupedFeeds.isEmpty) {
+          return const SliverToBoxAdapter(child: SizedBox.shrink());
+        }
+
+        final items = <_FeedListItem>[];
+        for (final country in groupedFeeds.entries) {
+          items.add(_CountryItem(country.key, country.value));
+          for (final region in country.value.entries) {
+            items.add(_RegionItem(region.key, region.value));
+            for (final feed in region.value) {
+              items.add(_FeedItem(feed));
+            }
+          }
+        }
+
+        return SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) => _buildItem(context, items[index]),
+            childCount: items.length,
+          ),
+        );
+      },
+    );
+  }
+}
+
+sealed class _FeedListItem {
+  const _FeedListItem();
+}
+
+final class _CountryItem extends _FeedListItem {
+  const _CountryItem(this.country, this.regions);
+  final String country;
+  final Map<String, List<TransitFeed>> regions;
+}
+
+final class _RegionItem extends _FeedListItem {
+  const _RegionItem(this.region, this.feeds);
+  final String region;
+  final List<TransitFeed> feeds;
+}
+
+final class _FeedItem extends _FeedListItem {
+  const _FeedItem(this.feed);
+  final TransitFeed feed;
+}
+
+Widget _buildItem(BuildContext context, _FeedListItem item) {
+  return switch (item) {
+    _CountryItem(:final country, :final regions) => _CountryCheckbox(
+        country: country,
+        regions: regions,
+      ),
+    _RegionItem(:final region, :final feeds) => _RegionCheckbox(
+        region: region,
+        feeds: feeds,
+      ),
+    _FeedItem(:final feed) => _FeedCheckbox(feed: feed),
+  };
+}
+
+class _CountryCheckbox extends StatelessWidget {
+  const _CountryCheckbox({required this.country, required this.regions});
+
+  final String country;
+  final Map<String, List<TransitFeed>> regions;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: NetworkSelection.instance,
+      builder: (context, _) {
+        final feedIds = regions.values.expand((f) => f).map((f) => f.id);
+        final value = _selectionValue(
+          feedIds,
+          NetworkSelection.instance.selectedFeedIds,
+        );
+        return CheckboxListTile(
+          contentPadding: EdgeInsets.zero,
+          tristate: true,
+          value: value,
+          title: Text(
+            _countryLabel(country),
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+          onChanged: (value) => NetworkSelection.instance.setFeedsSelected(
+            feedIds,
+            value ?? true,
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _RegionCheckbox extends StatelessWidget {
+  const _RegionCheckbox({required this.region, required this.feeds});
+
+  final String region;
+  final List<TransitFeed> feeds;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: NetworkSelection.instance,
+      builder: (context, _) {
+        final feedIds = feeds.map((f) => f.id);
+        final value = _selectionValue(
+          feedIds,
+          NetworkSelection.instance.selectedFeedIds,
+        );
+        return CheckboxListTile(
+          contentPadding: const EdgeInsets.only(left: AppSpacing.m),
+          tristate: true,
+          dense: true,
+          value: value,
+          title: Text(
+            region,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+          onChanged: (value) => NetworkSelection.instance.setFeedsSelected(
+            feedIds,
+            value ?? true,
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _FeedCheckbox extends StatelessWidget {
+  const _FeedCheckbox({required this.feed});
+
+  final TransitFeed feed;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: NetworkSelection.instance,
+      builder: (context, _) {
+        final selected = NetworkSelection.instance.selectedFeedIds.contains(
+          feed.id,
+        );
+        return CheckboxListTile(
+          contentPadding: const EdgeInsets.only(left: AppSpacing.xl),
+          value: selected,
+          title: Text(feed.name),
+          subtitle: Text(feed.description),
+          secondary: const Icon(Icons.public),
+          onChanged: (value) => NetworkSelection.instance.setFeedSelected(
+            feed.id,
+            value ?? false,
+          ),
+        );
+      },
     );
   }
 }
