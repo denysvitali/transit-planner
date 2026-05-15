@@ -13,9 +13,12 @@ class NetworkSelection extends ChangeNotifier {
   static const String _legacyPrefsKey = 'selected_network_feed_id';
 
   Set<String> _selectedFeedIds;
+  Future<void>? _loadFuture;
+  bool _loaded = false;
 
   Set<String> get selectedFeedIds => Set.unmodifiable(_selectedFeedIds);
   bool get hasSelectedFeeds => _selectedFeeds.isNotEmpty;
+  bool get hasLoaded => _loaded;
 
   TransitFeed get feed {
     final feeds = _selectedFeeds;
@@ -77,23 +80,30 @@ class NetworkSelection extends ChangeNotifier {
     return feeds;
   }
 
-  Future<void> load() async {
+  Future<void> load() {
+    return _loadFuture ??= _load().whenComplete(() => _loadFuture = null);
+  }
+
+  Future<void> _load() async {
+    if (_loaded) return;
     await TransitlandCatalog.instance.load();
     final prefs = await SharedPreferences.getInstance();
     final feedIds = prefs.getStringList(_prefsKey);
     if (feedIds != null && feedIds.isNotEmpty) {
-      _setSelectedFeedIds(feedIds, persist: false);
+      await _setSelectedFeedIds(feedIds, persist: false);
+      _loaded = true;
       return;
     }
 
     final legacyFeedId = prefs.getString(_legacyPrefsKey);
     final legacyFeed = legacyFeedId == null ? null : findFeedById(legacyFeedId);
     if (legacyFeed != null) {
-      _setSelectedFeedIds(
+      await _setSelectedFeedIds(
         componentFeedsFor(legacyFeed).map((feed) => feed.id),
         persist: false,
       );
     }
+    _loaded = true;
   }
 
   Future<void> select(TransitFeed feed) async {

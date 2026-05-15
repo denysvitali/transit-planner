@@ -42,7 +42,6 @@ dependencies:
   # zip into before handing the path to TP_Open.
   ffi: ^2.1.4
   path_provider: ^2.1.5
-  crypto: ^3.0.6
   # Geocoding lookups against the public OSM Nominatim service. Used to let
   # users type any free-form address instead of being forced to pick a GTFS
   # stop. Works the same on mobile, desktop, and web.

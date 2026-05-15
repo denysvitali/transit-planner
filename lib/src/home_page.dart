@@ -77,10 +77,13 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     NetworkSelection.instance.removeListener(_handleNetworkSelectionChanged);
+    _router?.close();
     super.dispose();
   }
 
   Future<void> _bootstrap() async {
+    await NetworkSelection.instance.load();
+    if (!mounted) return;
     await _openFeed(NetworkSelection.instance.feed);
   }
 
@@ -95,6 +98,7 @@ class _HomePageState extends State<HomePage> {
     final seq = ++_feedOpenSeq;
     _planSeq++;
     if (!NetworkSelection.instance.hasSelectedFeeds) {
+      final previousRouter = _router;
       if (mounted) {
         setState(() {
           _activeFeed = feed;
@@ -114,6 +118,7 @@ class _HomePageState extends State<HomePage> {
           _stopCircles.clear();
         });
       }
+      await previousRouter?.close();
       return;
     }
     if (mounted) {
@@ -140,7 +145,11 @@ class _HomePageState extends State<HomePage> {
             onProgress: (progress) => _handleFeedProgress(seq, progress),
           );
       final stops = await router.stops();
-      if (!mounted || seq != _feedOpenSeq) return;
+      if (!mounted || seq != _feedOpenSeq) {
+        await router.close();
+        return;
+      }
+      final previousRouter = _router;
       setState(() {
         _activeFeed = feed;
         _router = router;
@@ -154,6 +163,9 @@ class _HomePageState extends State<HomePage> {
         _itineraries = const [];
         _selectedItineraryIndex = 0;
       });
+      if (previousRouter != null && previousRouter != router) {
+        await previousRouter.close();
+      }
       await _refreshMapOverlays();
       await _plan();
     } catch (error, stackTrace) {
@@ -621,14 +633,30 @@ class _HomePageState extends State<HomePage> {
     if (_stops.length <= _maxStopPins) {
       return _stops;
     }
-    final sorted = _stops.toList(growable: false);
-    sorted.sort((a, b) {
-      return _nearestAnchorDistance(
-        a,
-        anchors,
-      ).compareTo(_nearestAnchorDistance(b, anchors));
-    });
-    return sorted.take(_maxStopPins).toList(growable: false);
+    final nearest = <({TransitStop stop, double distance})>[];
+    for (final stop in _stops) {
+      final candidate = (
+        stop: stop,
+        distance: _nearestAnchorDistance(stop, anchors),
+      );
+      if (nearest.length < _maxStopPins) {
+        nearest.add(candidate);
+        continue;
+      }
+      var farthestIndex = 0;
+      var farthestDistance = nearest.first.distance;
+      for (var i = 1; i < nearest.length; i++) {
+        if (nearest[i].distance > farthestDistance) {
+          farthestIndex = i;
+          farthestDistance = nearest[i].distance;
+        }
+      }
+      if (candidate.distance < farthestDistance) {
+        nearest[farthestIndex] = candidate;
+      }
+    }
+    nearest.sort((a, b) => a.distance.compareTo(b.distance));
+    return [for (final candidate in nearest) candidate.stop];
   }
 
   double _nearestAnchorDistance(

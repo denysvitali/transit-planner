@@ -11,8 +11,14 @@ const unreachable = math.MaxInt / 4
 
 type Engine struct {
 	feed            *Feed
-	tripsByStop     map[string][]Trip
+	trips           []Trip
+	tripsByStop     map[string][]tripBoarding
 	transfersByStop map[string][]Transfer
+}
+
+type tripBoarding struct {
+	trip      *Trip
+	stopIndex int
 }
 
 type Options struct {
@@ -45,10 +51,18 @@ type label struct {
 }
 
 func NewEngine(feed *Feed) *Engine {
-	tripsByStop := map[string][]Trip{}
+	tripsByStop := map[string][]tripBoarding{}
+	trips := make([]Trip, 0, len(feed.Trips))
 	for _, trip := range feed.Trips {
-		for _, stopTime := range trip.StopTimes {
-			tripsByStop[stopTime.StopID] = append(tripsByStop[stopTime.StopID], trip)
+		trips = append(trips, trip)
+	}
+	for i := range trips {
+		trip := &trips[i]
+		for stopIndex, stopTime := range trip.StopTimes {
+			tripsByStop[stopTime.StopID] = append(tripsByStop[stopTime.StopID], tripBoarding{
+				trip:      trip,
+				stopIndex: stopIndex,
+			})
 		}
 	}
 	transfersByStop := map[string][]Transfer{}
@@ -57,6 +71,7 @@ func NewEngine(feed *Feed) *Engine {
 	}
 	return &Engine{
 		feed:            feed,
+		trips:           trips,
 		tripsByStop:     tripsByStop,
 		transfersByStop: transfersByStop,
 	}
@@ -92,16 +107,16 @@ func (e *Engine) Route(originStopID, destinationStopID string, departure int, op
 	for round := 0; round < maxRounds; round++ {
 		e.applyTransfers(best[round])
 		for stopID, current := range best[round] {
-			for _, trip := range e.tripsByStop[stopID] {
+			for _, boarding := range e.tripsByStop[stopID] {
+				trip := boarding.trip
 				if !e.routeAllowed(trip.RouteID, options.AllowedRouteTypes) {
 					continue
 				}
-				boardIndex := firstBoardableIndex(trip.StopTimes, stopID, current.time)
-				if boardIndex < 0 {
+				if trip.StopTimes[boarding.stopIndex].Departure < current.time {
 					continue
 				}
-				board := trip.StopTimes[boardIndex]
-				for i := boardIndex + 1; i < len(trip.StopTimes); i++ {
+				board := trip.StopTimes[boarding.stopIndex]
+				for i := boarding.stopIndex + 1; i < len(trip.StopTimes); i++ {
 					alight := trip.StopTimes[i]
 					existing := best[round+1][alight.StopID]
 					if existing != nil && existing.time <= alight.Arrival {

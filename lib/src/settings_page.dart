@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import 'app_log.dart';
-import 'feed_catalog.dart';
 import 'network_selection.dart';
 import 'theme.dart';
 import 'transitland_catalog.dart';

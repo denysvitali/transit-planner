@@ -9,6 +9,9 @@ abstract class LocalTransitRouter {
   /// Computes one or more itineraries for the given [request]. May return
   /// an empty list when no route is reachable under the constraints.
   Future<List<Itinerary>> route(RouteRequest request);
+
+  /// Releases any native resources owned by the router.
+  Future<void> close();
 }
 
 class MockTransitRouter implements LocalTransitRouter {
@@ -16,6 +19,9 @@ class MockTransitRouter implements LocalTransitRouter {
 
   @override
   Future<List<TransitStop>> stops() async => kMockStops;
+
+  @override
+  Future<void> close() async {}
 
   @override
   Future<List<Itinerary>> route(RouteRequest request) async {

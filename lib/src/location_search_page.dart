@@ -61,14 +61,24 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
   LocationCoordinate? _nearbyLocation;
   String? _locationError;
   int _requestSeq = 0;
+  late List<_StopSearchEntry> _stopSearchEntries;
 
   @override
   void initState() {
     super.initState();
     _query = widget.initialQuery;
     _nearbyLocation = widget.initialNearbyLocation;
+    _stopSearchEntries = _buildStopSearchEntries(widget.stops);
     if (_query.trim().length >= 2) {
       _scheduleGeocode();
+    }
+  }
+
+  @override
+  void didUpdateWidget(LocationSearchPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(widget.stops, oldWidget.stops)) {
+      _stopSearchEntries = _buildStopSearchEntries(widget.stops);
     }
   }
 
@@ -119,12 +129,9 @@ class _LocationSearchPageState extends State<LocationSearchPage> {
   List<TransitStop> get _matchingStops {
     final q = _query.trim().toLowerCase();
     final matches = q.isEmpty
-        ? widget.stops
-        : widget.stops.where((s) => s.name.toLowerCase().contains(q));
-    return stopsSortedByDistance(
-      matches,
-      _searchAnchor,
-    ).take(20).toList(growable: false);
+        ? _stopSearchEntries
+        : _stopSearchEntries.where((s) => s.normalizedName.contains(q));
+    return _nearestStopsByDistance(matches, _searchAnchor, limit: 20);
   }
 
   void _selectStop(TransitStop stop) {
@@ -394,6 +401,55 @@ double haversineMeters(double lat1, double lon1, double lat2, double lon2) {
 }
 
 double _deg2rad(double deg) => deg * (math.pi / 180.0);
+
+class _StopSearchEntry {
+  const _StopSearchEntry({required this.stop, required this.normalizedName});
+
+  final TransitStop stop;
+  final String normalizedName;
+}
+
+List<_StopSearchEntry> _buildStopSearchEntries(List<TransitStop> stops) => [
+  for (final stop in stops)
+    _StopSearchEntry(stop: stop, normalizedName: stop.name.toLowerCase()),
+];
+
+List<TransitStop> _nearestStopsByDistance(
+  Iterable<_StopSearchEntry> stops,
+  LocationCoordinate anchor, {
+  required int limit,
+}) {
+  final nearest = <({TransitStop stop, double distance})>[];
+  for (final entry in stops) {
+    final stop = entry.stop;
+    final candidate = (
+      stop: stop,
+      distance: haversineMeters(
+        anchor.latitude,
+        anchor.longitude,
+        stop.latitude,
+        stop.longitude,
+      ),
+    );
+    if (nearest.length < limit) {
+      nearest.add(candidate);
+      continue;
+    }
+    var farthestIndex = 0;
+    var farthestDistance = nearest.first.distance;
+    for (var i = 1; i < nearest.length; i++) {
+      if (nearest[i].distance > farthestDistance) {
+        farthestIndex = i;
+        farthestDistance = nearest[i].distance;
+      }
+    }
+    if (candidate.distance < farthestDistance) {
+      nearest[farthestIndex] = candidate;
+    }
+  }
+  nearest.sort((a, b) => a.distance.compareTo(b.distance));
+  return [for (final candidate in nearest) candidate.stop];
+}
 
 List<TransitStop> stopsSortedByDistance(
   Iterable<TransitStop> stops,

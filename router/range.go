@@ -101,20 +101,17 @@ func (e *Engine) RouteRange(originStopID, destinationStopID string, fromTime, to
 // stops). Duplicate timestamps across trips are returned once each.
 func (e *Engine) collectOriginDepartures(originStopID string, fromTime, toTime int) []int {
 	seen := map[int]struct{}{}
-	for _, trip := range e.tripsByStop[originStopID] {
-		for i, stopTime := range trip.StopTimes {
-			if stopTime.StopID != originStopID {
-				continue
-			}
-			if i == len(trip.StopTimes)-1 {
-				// Cannot board at the final stop of a trip.
-				continue
-			}
-			if stopTime.Departure < fromTime || stopTime.Departure > toTime {
-				continue
-			}
-			seen[stopTime.Departure] = struct{}{}
+	for _, boarding := range e.tripsByStop[originStopID] {
+		trip := boarding.trip
+		stopTime := trip.StopTimes[boarding.stopIndex]
+		if boarding.stopIndex == len(trip.StopTimes)-1 {
+			// Cannot board at the final stop of a trip.
+			continue
 		}
+		if stopTime.Departure < fromTime || stopTime.Departure > toTime {
+			continue
+		}
+		seen[stopTime.Departure] = struct{}{}
 	}
 	out := make([]int, 0, len(seen))
 	for t := range seen {

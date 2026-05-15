@@ -14,7 +14,6 @@ import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
 
-import 'package:crypto/crypto.dart';
 import 'package:ffi/ffi.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
@@ -74,7 +73,8 @@ Future<LocalTransitRouter> openFeedRouter(
       'Opening native router for ${feed.id} (${stagedFeeds.length} component'
       '${stagedFeeds.length == 1 ? '' : 's'})',
     );
-    final openResult = await Isolate.run(() => _openNativeFeed(stagedFeeds));
+    final opened = await Isolate.run(() => _openAndLoadNativeFeed(stagedFeeds));
+    final openResult = opened.openResult;
     final openedHandle = openResult.handle;
     handle = openedHandle;
     for (final skip in openResult.skipped) {
@@ -97,7 +97,7 @@ Future<LocalTransitRouter> openFeedRouter(
         componentCount: stagedFeeds.length,
       ),
     );
-    final stops = await Isolate.run(() => _loadNativeStops(openedHandle));
+    final stops = opened.stops;
     final elapsed = DateTime.now().difference(openStart);
     AppLogBuffer.instance.info(
       'Feed ${feed.id} ready: ${stops.length} stops in '
@@ -189,10 +189,9 @@ Future<List<_StagedFeed>> _stageFeeds(
     return _StagedFeed(prefix: component.id, path: path);
   }
 
-  final staged = await _runWithConcurrency<_StagedFeed?>(
-    [for (final c in components) () => stageOne(c)],
-    _kMaxConcurrentStaging,
-  );
+  final staged = await _runWithConcurrency<_StagedFeed?>([
+    for (final c in components) () => stageOne(c),
+  ], _kMaxConcurrentStaging);
   final ok = [for (final s in staged) ?s];
   if (ok.isEmpty) {
     throw StateError(
@@ -273,9 +272,7 @@ Future<String> _stageFeed(
   final stamp = File('${dst.path}.sha256');
   final isBundled = feed.isBundled;
 
-  final expectedStamp = isBundled
-      ? await _bundledFeedStamp(feed)
-      : _cacheStamp(feed);
+  final expectedStamp = _cacheStamp(feed);
   final existingStamp = await stamp.exists()
       ? (await stamp.readAsString()).trim()
       : '';
@@ -313,33 +310,22 @@ Future<void> _cacheBundledFeed(
   if (assetPath == null) {
     throw StateError('missing bundled asset path for ${feed.id}');
   }
-  final assetData = await rootBundle.load(assetPath);
-  final bytes = assetData.buffer.asUint8List(
-    assetData.offsetInBytes,
-    assetData.lengthInBytes,
-  );
-  final expected = await Isolate.run(() => sha256.convert(bytes).toString());
+  final bytes = await _loadBundledFeedBytes(assetPath);
   onProgress(
     FeedLoadOperation.copyingBundledFeed,
     bytesReceived: bytes.length,
     totalBytes: bytes.length,
   );
   await dst.writeAsBytes(bytes, flush: true);
-  await stamp.writeAsString(_cacheStampWithHash(feed, expected));
+  await stamp.writeAsString(_cacheStamp(feed));
 }
 
-Future<String> _bundledFeedStamp(TransitFeed feed) async {
-  final assetPath = feed.bundledAssetPath;
-  if (assetPath == null) {
-    throw StateError('missing bundled asset path for ${feed.id}');
-  }
+Future<List<int>> _loadBundledFeedBytes(String assetPath) async {
   final assetData = await rootBundle.load(assetPath);
-  final bytes = assetData.buffer.asUint8List(
+  return assetData.buffer.asUint8List(
     assetData.offsetInBytes,
     assetData.lengthInBytes,
   );
-  final expected = await Isolate.run(() => sha256.convert(bytes).toString());
-  return _cacheStampWithHash(feed, expected);
 }
 
 Future<void> _downloadFeed(
@@ -383,14 +369,21 @@ Future<void> _downloadFeed(
       totalBytes: totalBytes,
     );
     try {
+      var lastProgressAt = DateTime.now();
       await for (final chunk in result) {
         received += chunk.length;
         sink.add(chunk);
-        onProgress(
-          FeedLoadOperation.downloadingFeed,
-          bytesReceived: received,
-          totalBytes: totalBytes,
-        );
+        final now = DateTime.now();
+        if (received == totalBytes ||
+            now.difference(lastProgressAt) >=
+                const Duration(milliseconds: 120)) {
+          lastProgressAt = now;
+          onProgress(
+            FeedLoadOperation.downloadingFeed,
+            bytesReceived: received,
+            totalBytes: totalBytes,
+          );
+        }
       }
       await sink.flush();
       await sink.close();
@@ -413,9 +406,6 @@ bool _isTransitlandDownload(Uri uri) =>
     uri.host == 'transit.land' &&
     uri.path.startsWith('/api/v2/rest/feeds/');
 
-String _cacheStampWithHash(TransitFeed feed, String hash) =>
-    '${feed.sourceUrl}\n$hash';
-
 String _cacheStamp(TransitFeed feed) => feed.sourceUrl;
 
 class _StagedFeed {
@@ -432,6 +422,13 @@ class _OpenResult {
   final List<_SkippedFeed> skipped;
 }
 
+class _OpenedNativeFeed {
+  const _OpenedNativeFeed({required this.openResult, required this.stops});
+
+  final _OpenResult openResult;
+  final List<TransitStop> stops;
+}
+
 class _SkippedFeed {
   const _SkippedFeed({required this.prefix, required this.error});
 
@@ -444,6 +441,19 @@ _OpenResult _openNativeFeed(List<_StagedFeed> stagedFeeds) =>
 
 List<TransitStop> _loadNativeStops(int handle) =>
     _NativeBindings.instance.stops(handle);
+
+_OpenedNativeFeed _openAndLoadNativeFeed(List<_StagedFeed> stagedFeeds) {
+  final openResult = _openNativeFeed(stagedFeeds);
+  try {
+    return _OpenedNativeFeed(
+      openResult: openResult,
+      stops: _loadNativeStops(openResult.handle),
+    );
+  } catch (_) {
+    _closeNativeFeed(openResult.handle);
+    rethrow;
+  }
+}
 
 void _closeNativeFeed(int handle) => _NativeBindings.instance.close(handle);
 
@@ -613,6 +623,11 @@ class _GoFfiRouter implements LocalTransitRouter {
   final int _handle;
   final List<TransitStop> _stops;
   final Map<String, TransitStop> _stopsById;
+
+  @override
+  Future<void> close() async {
+    await Isolate.run(() => _closeNativeFeed(_handle));
+  }
 
   @override
   Future<List<TransitStop>> stops() async => _stops;

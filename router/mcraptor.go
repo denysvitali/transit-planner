@@ -44,18 +44,18 @@ func (e *Engine) RouteMulti(originStopID, destinationStopID string, departure in
 		next := map[string][]*mcLabel{}
 		for stopID, current := range frontier {
 			for _, src := range current {
-				for _, trip := range e.tripsByStop[stopID] {
-					boardIndex := firstBoardableIndex(trip.StopTimes, stopID, src.arrival)
-					if boardIndex < 0 {
+				for _, boarding := range e.tripsByStop[stopID] {
+					trip := boarding.trip
+					if trip.StopTimes[boarding.stopIndex].Departure < src.arrival {
 						continue
 					}
-					board := trip.StopTimes[boardIndex]
+					board := trip.StopTimes[boarding.stopIndex]
 					addedTransfer := 0
 					// Boarding a transit leg after an existing transit leg counts as a transfer.
 					if hasTransitAncestor(src) {
 						addedTransfer = 1
 					}
-					for i := boardIndex + 1; i < len(trip.StopTimes); i++ {
+					for i := boarding.stopIndex + 1; i < len(trip.StopTimes); i++ {
 						alight := trip.StopTimes[i]
 						candidate := &mcLabel{
 							stopID:    alight.StopID,
