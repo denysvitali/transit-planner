@@ -29,21 +29,23 @@ func main() {
 
 func writeNetwork(buf *bytes.Buffer, network catalog.NetworkSpec) {
 	buf.WriteString("  TransitFeed(\n")
-	writeCommon(buf, network.ID, network.Name, network.Description, network.Publisher, network.License, network.SourceURL, "", network.Attribution, network.CenterLatitude, network.CenterLongitude, network.DefaultDepartureHour, "")
+	writeCommon(buf, network.ID, network.Name, network.Description, network.Country, network.Region, network.Publisher, network.License, network.SourceURL, "", network.Attribution, network.CenterLatitude, network.CenterLongitude, network.DefaultDepartureHour, "")
 	writeStringList(buf, "componentFeedIds", network.ComponentFeedIDs)
 	buf.WriteString("  ),\n")
 }
 
 func writeFeed(buf *bytes.Buffer, feed catalog.FeedSpec) {
 	buf.WriteString("  TransitFeed(\n")
-	writeCommon(buf, feed.ID, feed.Name, feed.Description, feed.Publisher, feed.License, feed.SourceURL, feed.LocalFileName, feed.Attribution, feed.CenterLatitude, feed.CenterLongitude, feed.DefaultDepartureHour, feed.BundledAssetPath)
+	writeCommon(buf, feed.ID, feed.Name, feed.Description, feed.Country, feed.Region, feed.Publisher, feed.License, feed.SourceURL, feed.LocalFileName, feed.Attribution, feed.CenterLatitude, feed.CenterLongitude, feed.DefaultDepartureHour, feed.BundledAssetPath)
 	buf.WriteString("  ),\n")
 }
 
-func writeCommon(buf *bytes.Buffer, id, name, description, publisher, license, sourceURL, localFileName, attribution string, lat, lon float64, hour *int, bundled string) {
+func writeCommon(buf *bytes.Buffer, id, name, description, country, region, publisher, license, sourceURL, localFileName, attribution string, lat, lon float64, hour *int, bundled string) {
 	writeString(buf, "id", id)
 	writeString(buf, "name", name)
 	writeString(buf, "description", description)
+	writeString(buf, "country", country)
+	writeString(buf, "region", region)
 	writeString(buf, "publisher", publisher)
 	writeString(buf, "license", license)
 	writeString(buf, "sourceUrl", sourceURL)

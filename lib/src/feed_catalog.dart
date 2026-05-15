@@ -1,7 +1,7 @@
 // Catalog of known GTFS feeds and merged regional networks for the app.
 //
 // The app starts with one bundled default feed, then lets users opt into
-// broader Transitland-discovered networks from the route screen.
+// broader Transitland-discovered networks or individual GTFS feeds.
 part 'feed_catalog.g.dart';
 
 class TransitFeed {
@@ -9,6 +9,8 @@ class TransitFeed {
     required this.id,
     required this.name,
     required this.description,
+    this.country = '',
+    this.region = '',
     required this.publisher,
     required this.license,
     required this.sourceUrl,
@@ -24,6 +26,8 @@ class TransitFeed {
   final String id;
   final String name;
   final String description;
+  final String country;
+  final String region;
   final String publisher;
   final String license;
   final String sourceUrl;
@@ -73,3 +77,24 @@ List<TransitFeed> appNetworkFeeds() => kAppNetworkFeedIds
     .map(findFeedById)
     .whereType<TransitFeed>()
     .toList(growable: false);
+
+List<TransitFeed> selectableTransitFeeds() {
+  final seen = <String>{};
+  final out = <TransitFeed>[];
+
+  void addFeed(TransitFeed feed) {
+    if (seen.add(feed.id)) {
+      out.add(feed);
+    }
+  }
+
+  for (final feed in appNetworkFeeds()) {
+    addFeed(feed);
+  }
+  for (final feed in kTransitFeeds) {
+    if (!feed.isCollection) {
+      addFeed(feed);
+    }
+  }
+  return out;
+}

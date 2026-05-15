@@ -14,6 +14,10 @@ void main() {
     expect(appNetworkFeeds().first.id, 'transitland-coverage');
     expect(appNetworkFeeds(), contains(transitland));
     expect(
+      selectableTransitFeeds().map((feed) => feed.id),
+      containsAll(['transitland-coverage', 'it-rome', 'toei-train']),
+    );
+    expect(
       componentFeedsFor(transitland).map((feed) => feed.id),
       containsAll([
         'ch-aggregate-2026',

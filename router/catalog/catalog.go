@@ -23,6 +23,8 @@ type NetworkSpec struct {
 	ID                   string
 	Name                 string
 	Description          string
+	Country              string
+	Region               string
 	Publisher            string
 	License              string
 	SourceURL            string
@@ -225,6 +227,7 @@ var transitlandCoverageFeedIDs = append(append([]string{
 var Networks = []NetworkSpec{
 	{
 		ID: "transitland-coverage", Name: "Transitland coverage",
+		Country: "Global", Region: "Coverage",
 		Description: "Single app network for Transitland-sourced coverage across Japan, Switzerland, and Italy. Feed discovery runs in tooling/CI so the app never stores a Transitland API key.",
 		Publisher:   "Transitland and source transit-data publishers", License: "Mixed source licences", SourceURL: "https://transit.land/api/v2/rest/feeds",
 		Attribution:    "Transit data discovered through Transitland; licences vary by publisher, so show each component feed attribution where relevant.",
@@ -233,6 +236,7 @@ var Networks = []NetworkSpec{
 	},
 	{
 		ID: "ch-national", Name: "Switzerland - national GTFS",
+		Country: "CH", Region: "Nationwide",
 		Description: "Official nationwide Swiss static GTFS timetable, suitable as the canonical country source after preprocessing.",
 		Publisher:   Feeds["ch-aggregate-2026"].Publisher, License: Feeds["ch-aggregate-2026"].License, SourceURL: Feeds["ch-aggregate-2026"].SourceURL,
 		Attribution: Feeds["ch-aggregate-2026"].Attribution, CenterLatitude: 46.8182, CenterLongitude: 8.2275,
@@ -240,6 +244,7 @@ var Networks = []NetworkSpec{
 	},
 	{
 		ID: "it-public-regional", Name: "Italy - regional and city GTFS",
+		Country: "IT", Region: "Country",
 		Description: "Official no-key Italian regional and city GTFS feeds currently known to the app: Rome, Milan, Lombardy rail, Tuscany, and Trentino.",
 		Publisher:   "Multiple Italian public-data publishers", License: "Mixed open-data licences", SourceURL: "Multiple GTFS endpoints",
 		Attribution:    "Merged network of the Italian feeds listed below. Licences vary by publisher; see each feed attribution.",
@@ -248,6 +253,7 @@ var Networks = []NetworkSpec{
 	},
 	{
 		ID: "it-tuscany-public", Name: "Tuscany - regional GTFS",
+		Country: "IT", Region: "Tuscany",
 		Description: "Regione Toscana multimodal GTFS resources for rail, ferries, tram, and bus.",
 		Publisher:   "Regione Toscana", License: "CC-BY-4.0", SourceURL: "Multiple Regione Toscana GTFS endpoints",
 		Attribution:    "Merged network of official Regione Toscana GTFS resources; see each feed attribution below.",
@@ -256,6 +262,7 @@ var Networks = []NetworkSpec{
 	},
 	{
 		ID: "it-trentino-public", Name: "Trentino - public transport GTFS",
+		Country: "IT", Region: "Trentino-Alto Adige",
 		Description: "Trentino urban and extraurban GTFS resources.",
 		Publisher:   "Trentino Trasporti", License: "CC-BY-4.0", SourceURL: "Multiple Trentino Trasporti GTFS endpoints",
 		Attribution:    "Merged network of Trentino urban and extraurban GTFS resources; see each feed attribution below.",
@@ -264,6 +271,7 @@ var Networks = []NetworkSpec{
 	},
 	{
 		ID: "jp-public-no-key", Name: "Japan - available public feeds",
+		Country: "JP", Region: "Country",
 		Description: "All no-key Japanese GTFS feeds currently known to the app, merged into one local routing network.",
 		Publisher:   "Multiple public GTFS publishers", License: "Mixed open-data licences", SourceURL: "Multiple GTFS endpoints",
 		Attribution:    "Merged network of the Japanese feeds listed below. Licences vary by publisher; see each feed attribution.",
@@ -272,6 +280,7 @@ var Networks = []NetworkSpec{
 	},
 	{
 		ID: "tokyo-toei", Name: "Tokyo Toei network",
+		Country: "JP", Region: "Tokyo",
 		Description: "Tokyo Metropolitan Bureau of Transportation subway, tram, liner, and municipal bus feeds merged into one network.",
 		Publisher:   "Tokyo Metropolitan Bureau of Transportation (東京都交通局)", License: "CC-BY-4.0", SourceURL: "Multiple ODPT GTFS endpoints",
 		Attribution: Feeds["toei-train"].Attribution, CenterLatitude: 35.681236, CenterLongitude: 139.767125,
@@ -279,6 +288,7 @@ var Networks = []NetworkSpec{
 	},
 	{
 		ID: "kanazawa-region", Name: "Kanazawa region",
+		Country: "JP", Region: "Ishikawa",
 		Description: "Kanazawa, Ishikawa, and nearby Hokuriku public bus and tram feeds merged into one regional network.",
 		Publisher:   "Multiple Hokuriku public-data publishers", License: "Mixed open-data licences", SourceURL: "Multiple GTFS endpoints",
 		Attribution:    "Merged network of Kanazawa, Ishikawa, and nearby Hokuriku public GTFS feeds; see each feed attribution below.",
@@ -287,6 +297,7 @@ var Networks = []NetworkSpec{
 	},
 	{
 		ID: "kansai-public-no-key", Name: "Kansai - available public feeds",
+		Country: "JP", Region: "Kansai",
 		Description: "Public no-key Hyogo, Nara, Shiga, and Wakayama feeds. This does not include major JR or private rail.",
 		Publisher:   "Multiple public GTFS publishers", License: "Mixed open-data licences", SourceURL: "Multiple GTFS endpoints",
 		Attribution:    "Merged network of the Kansai-area no-key public feeds listed below. Major rail is not included.",

@@ -7,6 +7,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Transitland coverage",
     description:
         "Single app network for Transitland-sourced coverage across Japan, Switzerland, and Italy. Feed discovery runs in tooling/CI so the app never stores a Transitland API key.",
+    country: "Global",
+    region: "Coverage",
     publisher: "Transitland and source transit-data publishers",
     license: "Mixed source licences",
     sourceUrl: "https://transit.land/api/v2/rest/feeds",
@@ -69,6 +71,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Switzerland - national GTFS",
     description:
         "Official nationwide Swiss static GTFS timetable, suitable as the canonical country source after preprocessing.",
+    country: "CH",
+    region: "Nationwide",
     publisher:
         "Systemaufgaben Kundeninformation SKI+ / opentransportdata.swiss",
     license: "opentransportdata.swiss terms of use",
@@ -86,6 +90,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Italy - regional and city GTFS",
     description:
         "Official no-key Italian regional and city GTFS feeds currently known to the app: Rome, Milan, Lombardy rail, Tuscany, and Trentino.",
+    country: "IT",
+    region: "Country",
     publisher: "Multiple Italian public-data publishers",
     license: "Mixed open-data licences",
     sourceUrl: "Multiple GTFS endpoints",
@@ -116,6 +122,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Tuscany - regional GTFS",
     description:
         "Regione Toscana multimodal GTFS resources for rail, ferries, tram, and bus.",
+    country: "IT",
+    region: "Tuscany",
     publisher: "Regione Toscana",
     license: "CC-BY-4.0",
     sourceUrl: "Multiple Regione Toscana GTFS endpoints",
@@ -140,6 +148,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "it-trentino-public",
     name: "Trentino - public transport GTFS",
     description: "Trentino urban and extraurban GTFS resources.",
+    country: "IT",
+    region: "Trentino-Alto Adige",
     publisher: "Trentino Trasporti",
     license: "CC-BY-4.0",
     sourceUrl: "Multiple Trentino Trasporti GTFS endpoints",
@@ -155,6 +165,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Japan - available public feeds",
     description:
         "All no-key Japanese GTFS feeds currently known to the app, merged into one local routing network.",
+    country: "JP",
+    region: "Country",
     publisher: "Multiple public GTFS publishers",
     license: "Mixed open-data licences",
     sourceUrl: "Multiple GTFS endpoints",
@@ -203,6 +215,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Tokyo Toei network",
     description:
         "Tokyo Metropolitan Bureau of Transportation subway, tram, liner, and municipal bus feeds merged into one network.",
+    country: "JP",
+    region: "Tokyo",
     publisher: "Tokyo Metropolitan Bureau of Transportation (東京都交通局)",
     license: "CC-BY-4.0",
     sourceUrl: "Multiple ODPT GTFS endpoints",
@@ -219,6 +233,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Kanazawa region",
     description:
         "Kanazawa, Ishikawa, and nearby Hokuriku public bus and tram feeds merged into one regional network.",
+    country: "JP",
+    region: "Ishikawa",
     publisher: "Multiple Hokuriku public-data publishers",
     license: "Mixed open-data licences",
     sourceUrl: "Multiple GTFS endpoints",
@@ -247,6 +263,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Kansai - available public feeds",
     description:
         "Public no-key Hyogo, Nara, Shiga, and Wakayama feeds. This does not include major JR or private rail.",
+    country: "JP",
+    region: "Kansai",
     publisher: "Multiple public GTFS publishers",
     license: "Mixed open-data licences",
     sourceUrl: "Multiple GTFS endpoints",
@@ -280,6 +298,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Switzerland national GTFS",
     description:
         "Official nationwide Swiss GTFS static timetable for the current 2026 timetable year.",
+    country: "CH",
+    region: "Nationwide",
     publisher:
         "Systemaufgaben Kundeninformation SKI+ / opentransportdata.swiss",
     license: "opentransportdata.swiss terms of use",
@@ -295,6 +315,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "it-lombardy-trenord",
     name: "Lombardy Trenord rail",
     description: "Regional rail GTFS for Lombardy / Trenord services.",
+    country: "IT",
+    region: "Lombardy",
     publisher: "Trenord",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -309,6 +331,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Milan urban GTFS",
     description:
         "Milan urban public transport GTFS mirrored by Mobility Database because the official direct file can be region-restricted.",
+    country: "IT",
+    region: "Lombardy",
     publisher: "Comune di Milano / ATM / AMAT",
     license: "CC-BY-4.0",
     sourceUrl: "https://files.mobilitydatabase.org/mdb-2666/latest.zip",
@@ -321,6 +345,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "it-rome",
     name: "Rome public transport GTFS",
     description: "Daily static GTFS for Rome public transport.",
+    country: "IT",
+    region: "Lazio",
     publisher: "Roma Servizi per la Mobilità",
     license: "CC-BY-SA",
     sourceUrl:
@@ -334,6 +360,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "it-trentino-extraurban",
     name: "Trentino extraurban GTFS",
     description: "Extraurban GTFS for Trentino public transport.",
+    country: "IT",
+    region: "Trentino-Alto Adige",
     publisher: "Trentino Trasporti",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -347,6 +375,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "it-trentino-urban",
     name: "Trentino urban GTFS",
     description: "Urban GTFS for Trentino public transport.",
+    country: "IT",
+    region: "Trentino-Alto Adige",
     publisher: "Trentino Trasporti",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -361,6 +391,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Tuscany Autolinee non-school",
     description:
         "Autolinee Toscane non-school bus GTFS in the Florence metropolitan area.",
+    country: "IT",
+    region: "Tuscany",
     publisher: "Regione Toscana / Autolinee Toscane",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -376,6 +408,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Tuscany Autolinee school",
     description:
         "Autolinee Toscane school bus GTFS in the Florence metropolitan area.",
+    country: "IT",
+    region: "Tuscany",
     publisher: "Regione Toscana / Autolinee Toscane",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -391,6 +425,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Tuscany Autolinee Toscane",
     description:
         "Autolinee Toscane regional bus GTFS from the official Tuscany mobility endpoint.",
+    country: "IT",
+    region: "Tuscany",
     publisher: "Regione Toscana / Autolinee Toscane",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -406,6 +442,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Tuscany Colbus non-school",
     description:
         "Colbus non-school bus GTFS in the Florence metropolitan area.",
+    country: "IT",
+    region: "Tuscany",
     publisher: "Regione Toscana / Colbus",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -419,6 +457,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "it-tuscany-colbus-school",
     name: "Tuscany Colbus school",
     description: "Colbus school bus GTFS in the Florence metropolitan area.",
+    country: "IT",
+    region: "Tuscany",
     publisher: "Regione Toscana / Colbus",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -432,6 +472,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "it-tuscany-gest",
     name: "Florence tram GTFS",
     description: "Florence tram GTFS from Regione Toscana.",
+    country: "IT",
+    region: "Tuscany",
     publisher: "Regione Toscana / GEST",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -446,6 +488,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Tuscany TFT rail GTFS",
     description:
         "Trasporto Ferroviario Toscano rail GTFS from Regione Toscana.",
+    country: "IT",
+    region: "Tuscany",
     publisher: "Regione Toscana / Trasporto Ferroviario Toscano",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -460,6 +504,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "it-tuscany-toremar",
     name: "Tuscany Toremar ferries GTFS",
     description: "Toremar ferry GTFS for Tuscany coastal and island services.",
+    country: "IT",
+    region: "Tuscany",
     publisher: "Regione Toscana / Toremar",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -473,6 +519,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "it-tuscany-trenitalia",
     name: "Tuscany Trenitalia regional rail",
     description: "Trenitalia regional rail GTFS for Tuscany.",
+    country: "IT",
+    region: "Tuscany",
     publisher: "Regione Toscana / Trenitalia",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -486,6 +534,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "himeji-ieshima",
     name: "Himeji Ieshima Routes",
     description: "Himeji Ieshima / Boze / Yukihiko routes, via gtfs-data.jp",
+    country: "JP",
+    region: "Hyogo",
     publisher: "Himeji City (姫路市)",
     license: "CC-BY-2.1-JP",
     sourceUrl:
@@ -500,6 +550,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Akashi Taco Bus",
     description:
         "Akashi Taco Bus and Taco Bus Mini, mirrored by Mobility Database.",
+    country: "JP",
+    region: "Hyogo Prefecture",
     publisher: "明石市",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -514,6 +566,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "jbda-andotown-andocombus",
     name: "Ando Community Bus",
     description: "Ando community bus, mirrored by Mobility Database.",
+    country: "JP",
+    region: "Nara Prefecture",
     publisher: "安堵町",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -528,6 +582,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "jbda-chitetsu-chitetsubus",
     name: "Toyama Chitetsu Bus",
     description: "Toyama Chitetsu bus network, mirrored by Mobility Database.",
+    country: "JP",
+    region: "Toyama Prefecture",
     publisher: "富山地方鉄道",
     license: "CC0-1.0",
     sourceUrl:
@@ -543,6 +599,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Toyama Chitetsu City Tram",
     description:
         "Toyama Chitetsu city tram network, mirrored by Mobility Database.",
+    country: "JP",
+    region: "Toyama Prefecture",
     publisher: "富山地方鉄道",
     license: "CC0-1.0",
     sourceUrl:
@@ -557,6 +615,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "jbda-higashiomicity-higasiohmisicommunitybus",
     name: "Higashiomi Chokotto Bus",
     description: "Higashiomi Chokotto Bus, mirrored by Mobility Database.",
+    country: "JP",
+    region: "Shiga Prefecture",
     publisher: "東近江市",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -572,6 +632,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Kaetsunou Bus",
     description:
         "Kaetsunou general route bus network around Kanazawa, mirrored by Mobility Database.",
+    country: "JP",
+    region: "Ishikawa Prefecture",
     publisher: "加越能バス",
     license: "CC0-1.0",
     sourceUrl:
@@ -587,6 +649,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Kakogawa Kako Bus",
     description:
         "Kakogawa Kako Bus and Kako Bus Mini, mirrored by Mobility Database.",
+    country: "JP",
+    region: "Hyogo Prefecture",
     publisher: "加古川市",
     license: "CC-BY-2.1-JP",
     sourceUrl:
@@ -601,6 +665,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "jbda-komatsucity-blue",
     name: "Komatsu North Loop",
     description: "Komatsu city north loop bus, mirrored by Mobility Database.",
+    country: "JP",
+    region: "Ishikawa Prefecture",
     publisher: "小松市",
     license: "CC0-1.0",
     sourceUrl:
@@ -614,6 +680,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "jbda-komatsucity-kibagatasen",
     name: "Komatsu Kibagata Line",
     description: "Komatsu Kibagata bus line, mirrored by Mobility Database.",
+    country: "JP",
+    region: "Ishikawa Prefecture",
     publisher: "小松市",
     license: "CC0-1.0",
     sourceUrl:
@@ -627,6 +695,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "jbda-komatsucity-orange",
     name: "Komatsu South Loop",
     description: "Komatsu city south loop bus, mirrored by Mobility Database.",
+    country: "JP",
+    region: "Ishikawa Prefecture",
     publisher: "小松市",
     license: "CC0-1.0",
     sourceUrl:
@@ -640,6 +710,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "jbda-manyosen-manyosen",
     name: "Manyosen Tram",
     description: "Manyosen tram network, mirrored by Mobility Database.",
+    country: "JP",
+    region: "Toyama Prefecture",
     publisher: "万葉線",
     license: "CC0-1.0",
     sourceUrl:
@@ -653,6 +725,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "jbda-nabaricity-communitybus",
     name: "Nabari Community Bus",
     description: "Nabari community bus, mirrored by Mobility Database.",
+    country: "JP",
+    region: "Nara Prefecture",
     publisher: "名張市",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -668,6 +742,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Nishinomiya Gurutto Namaze",
     description:
         "Nishinomiya Gurutto Namaze community bus, mirrored by Mobility Database.",
+    country: "JP",
+    region: "Hyogo Prefecture",
     publisher: "西宮市",
     license: "CC-BY-2.1-JP",
     sourceUrl:
@@ -683,6 +759,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Nishinomiya Koyoen Bus",
     description:
         "Nishinomiya Koyoen community bus, mirrored by Mobility Database.",
+    country: "JP",
+    region: "Hyogo Prefecture",
     publisher: "西宮市",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -698,6 +776,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Nonoichi Community Bus",
     description:
         "Nonoichi community bus network, mirrored by Mobility Database.",
+    country: "JP",
+    region: "Ishikawa Prefecture",
     publisher: "野々市市",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -712,6 +792,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "jbda-omihachimancity-akakonbus",
     name: "Omihachiman Akakon Bus",
     description: "Omihachiman Akakon Bus, mirrored by Mobility Database.",
+    country: "JP",
+    region: "Shiga Prefecture",
     publisher: "近江八幡市",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -726,6 +808,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "jbda-takasagocity-jotonbus",
     name: "Takasago Joton Bus",
     description: "Takasago Joton Bus, mirrored by Mobility Database.",
+    country: "JP",
+    region: "Hyogo Prefecture",
     publisher: "高砂市",
     license: "CC-BY-2.1-JP",
     sourceUrl:
@@ -741,6 +825,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Uchinada Community Bus",
     description:
         "Uchinada community bus network, mirrored by Mobility Database.",
+    country: "JP",
+    region: "Ishikawa Prefecture",
     publisher: "内灘町",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -756,6 +842,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Yamatotakada Kibou Bus",
     description:
         "Yamatotakada Kibou community bus, mirrored by Mobility Database.",
+    country: "JP",
+    region: "Nara Prefecture",
     publisher: "大和高田市",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -771,6 +859,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Kanazawa Flat Bus",
     description:
         "Kanazawa city bus network, published as GTFS on the city open-data catalog.",
+    country: "JP",
+    region: "Ishikawa",
     publisher: "Kanazawa City, Ishikawa",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -786,6 +876,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Hakusan Meguru",
     description:
         "Hakusan City Community Bus (\"Meguru\") network GTFS from the municipal open-data portal.",
+    country: "JP",
+    region: "Ishikawa",
     publisher: "Hakusan City, Ishikawa",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -799,6 +891,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "kanazawa-tsubata-bus",
     name: "Tsubata Town Bus",
     description: "Tsubata Town bus routes on the GSF/GTFS-JP package.",
+    country: "JP",
+    region: "Ishikawa",
     publisher: "Tsubata Town (Tsubata-chō), Ishikawa",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -813,6 +907,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "kobe-satoyama",
     name: "Kobe Satoyama Bus",
     description: "Kobe Satoyama community bus, via gtfs-data.jp",
+    country: "JP",
+    region: "Hyogo",
     publisher: "Kobe City (神戸市)",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -826,6 +922,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "kobe-shiokaze",
     name: "Kobe Shiokaze Bus",
     description: "Kobe Shiokaze community bus, via gtfs-data.jp",
+    country: "JP",
+    region: "Hyogo",
     publisher: "Kobe City (神戸市)",
     license: "CC-BY-2.1-JP",
     sourceUrl:
@@ -839,6 +937,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "nishinomiya-sakurayamanami",
     name: "Nishinomiya Sakurayamanami Bus",
     description: "Nishinomiya Sakurayamanami community bus, via gtfs-data.jp",
+    country: "JP",
+    region: "Hyogo",
     publisher: "Nishinomiya City (西宮市)",
     license: "CC-BY-2.1-JP",
     sourceUrl:
@@ -852,6 +952,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "rinkan-koyasan",
     name: "Nankai Rinkan Koyasan Bus",
     description: "Mt. Koya / Koyasan bus network, via gtfs-data.jp",
+    country: "JP",
+    region: "Wakayama",
     publisher: "Nankai Rinkan Bus (南海りんかんバス)",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -865,6 +967,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "takarazuka-runrunbus",
     name: "Takarazuka Runrun Bus",
     description: "Takarazuka runrun community bus, via gtfs-data.jp",
+    country: "JP",
+    region: "Hyogo",
     publisher: "Takarazuka City (宝塚市)",
     license: "CC-BY-2.1-JP",
     sourceUrl:
@@ -879,6 +983,8 @@ const List<TransitFeed> kTransitFeeds = [
     name: "Tokyo Toei Bus",
     description:
         "Tokyo Metropolitan Bureau of Transportation municipal bus routes.",
+    country: "JP",
+    region: "Tokyo",
     publisher: "Tokyo Metropolitan Bureau of Transportation (東京都交通局)",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -893,6 +999,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "toei-train",
     name: "Tokyo Toei Subway",
     description: "Toei subway lines (浅草線, 三田線, 新宿線, 大江戸線, 日暮里舎人ライナー, 都電荒川線).",
+    country: "JP",
+    region: "Tokyo",
     publisher: "Tokyo Metropolitan Bureau of Transportation (東京都交通局)",
     license: "CC-BY-4.0",
     sourceUrl:
@@ -909,6 +1017,8 @@ const List<TransitFeed> kTransitFeeds = [
     id: "yamatokoriyama-kingyobus",
     name: "Yamatokoriyama Kingyo Bus",
     description: "Yamatokoriyama Kingyo community bus, via gtfs-data.jp",
+    country: "JP",
+    region: "Nara",
     publisher: "Yamatokoriyama City (大和郡山市)",
     license: "CC-BY-4.0",
     sourceUrl:

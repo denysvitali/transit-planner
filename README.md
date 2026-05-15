@@ -80,8 +80,9 @@ The script needs `rsvg-convert` (Debian/Ubuntu: `librsvg2-bin`) and Pillow
 
 The app opens the bundled default feed on startup so launch never downloads a
 multi-country catalog before the user asks for one. The Settings network
-selector can then load the Transitland coverage collection or smaller country and
-regional collections through the same local GTFS router path. Transitland
+selector groups choices by country and region, and can load the Transitland
+coverage collection, smaller regional collections, or individual GTFS feeds
+through the same local GTFS router path. Transitland
 discovery runs in tooling/CI; the API key is never embedded in the Flutter app.
 
 Sources are open and license-tagged:

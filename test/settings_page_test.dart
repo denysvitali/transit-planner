@@ -25,6 +25,18 @@ void main() {
     await tester.pump();
 
     expect(NetworkSelection.instance.feed.id, 'transitland-coverage');
+
+    await tester.scrollUntilVisible(
+      find.widgetWithText(ListTile, 'Rome public transport GTFS'),
+      500,
+      maxScrolls: 50,
+    );
+    await tester.tap(
+      find.widgetWithText(ListTile, 'Rome public transport GTFS'),
+    );
+    await tester.pump();
+
+    expect(NetworkSelection.instance.feed.id, 'it-rome');
   });
 
   testWidgets('logs open as a settings sub-view and back returns to settings', (

@@ -149,12 +149,34 @@ class _NetworkSection extends StatelessWidget {
               ),
             ),
             const SizedBox(height: AppSpacing.s),
-            for (final feed in appNetworkFeeds())
-              _NetworkOption(
-                feed: feed,
-                selected: feed.id == activeFeed.id,
-                onTap: () => NetworkSelection.instance.select(feed),
+            for (final country in _groupedSelectableFeeds().entries) ...[
+              Padding(
+                padding: const EdgeInsets.only(top: AppSpacing.s),
+                child: Text(
+                  _countryLabel(country.key),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
+              for (final region in country.value.entries) ...[
+                Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.xs),
+                  child: Text(
+                    region.key,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                for (final feed in region.value)
+                  _NetworkOption(
+                    feed: feed,
+                    selected: feed.id == activeFeed.id,
+                    onTap: () => NetworkSelection.instance.select(feed),
+                  ),
+              ],
+            ],
           ],
         );
       },
@@ -190,6 +212,50 @@ class _NetworkOption extends StatelessWidget {
       onTap: onTap,
     );
   }
+}
+
+Map<String, Map<String, List<TransitFeed>>> _groupedSelectableFeeds() {
+  final grouped = <String, Map<String, List<TransitFeed>>>{};
+  for (final feed in selectableTransitFeeds()) {
+    final country = feed.country.isEmpty ? 'Other' : feed.country;
+    final region = feed.region.isEmpty ? 'Other' : feed.region;
+    grouped.putIfAbsent(country, () => <String, List<TransitFeed>>{});
+    grouped[country]!.putIfAbsent(region, () => <TransitFeed>[]);
+    grouped[country]![region]!.add(feed);
+  }
+
+  final countryKeys = grouped.keys.toList()
+    ..sort((a, b) {
+      if (a == 'Global') return -1;
+      if (b == 'Global') return 1;
+      return _countryLabel(a).compareTo(_countryLabel(b));
+    });
+  return {
+    for (final country in countryKeys)
+      country: {
+        for (final region
+            in (grouped[country]!.keys.toList()..sort(_compareRegionLabels)))
+          region: grouped[country]![region]!,
+      },
+  };
+}
+
+int _compareRegionLabels(String a, String b) {
+  const priority = {'Coverage': 0, 'Country': 1, 'Nationwide': 2};
+  final aPriority = priority[a] ?? 10;
+  final bPriority = priority[b] ?? 10;
+  if (aPriority != bPriority) return aPriority.compareTo(bPriority);
+  return a.compareTo(b);
+}
+
+String _countryLabel(String country) {
+  return switch (country) {
+    'CH' => 'Switzerland (CH)',
+    'IT' => 'Italy (IT)',
+    'JP' => 'Japan (JP)',
+    'Global' => 'Global',
+    _ => country,
+  };
 }
 
 String _networkSubtitle(TransitFeed feed) {
