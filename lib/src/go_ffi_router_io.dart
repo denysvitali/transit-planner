@@ -146,13 +146,21 @@ Future<List<_StagedFeed>> _stageFeeds(
     );
   }
 
-  Future<_StagedFeed> stageOne(TransitFeed component) async {
-    final path = await _stageFeed(
-      component,
-      componentIndex: 0,
-      componentCount: total,
-      onProgress: forwardProgress,
-    );
+  Future<_StagedFeed?> stageOne(TransitFeed component) async {
+    String? path;
+    try {
+      path = await _stageFeed(
+        component,
+        componentIndex: 0,
+        componentCount: total,
+        onProgress: forwardProgress,
+      );
+    } catch (error) {
+      // A single feed failing (e.g. 404 from Transitland, malformed zip,
+      // disk error) must not abort the whole collection — the user picked
+      // dozens of feeds and expects whatever works to load. Log and skip.
+      AppLogBuffer.instance.warning('Skipping feed ${component.id}: $error');
+    }
     completed++;
     // Emit a tick so the UI's completed count advances even when no
     // other feed is mid-flight to push a new progress event.
@@ -164,13 +172,28 @@ Future<List<_StagedFeed>> _stageFeeds(
         componentCount: total,
       ),
     );
+    if (path == null) return null;
     return _StagedFeed(prefix: component.id, path: path);
   }
 
-  return _runWithConcurrency<_StagedFeed>(
+  final staged = await _runWithConcurrency<_StagedFeed?>(
     [for (final c in components) () => stageOne(c)],
     _kMaxConcurrentStaging,
   );
+  final ok = [for (final s in staged) ?s];
+  if (ok.isEmpty) {
+    throw StateError(
+      'no feeds in ${feed.id} could be staged (${components.length} attempted)',
+    );
+  }
+  final skipped = components.length - ok.length;
+  if (skipped > 0) {
+    AppLogBuffer.instance.warning(
+      'Loaded ${ok.length}/${components.length} feeds for ${feed.id} '
+      '($skipped skipped due to errors)',
+    );
+  }
+  return ok;
 }
 
 /// Runs [tasks] with at most [maxConcurrent] in flight at once. Results
