@@ -134,6 +134,7 @@ jobs:
     needs: [build-go-android]
     env:
       KEYSTORE_KEY_ALIAS: upload
+      TRANSITLAND_API_KEY: ${{ secrets.TRANSITLAND_API_KEY }}
     # Build a release APK for every commit pushed to a tracked branch, version
     # tags, and manual runs. PRs still build (via the default trigger) but do
     # not publish a GitHub Release.
@@ -333,7 +334,8 @@ jobs:
           KEYSTORE_KEY_PASSWORD: ${{ steps.resolve_keystore.outputs.KEYSTORE_KEY_PASSWORD }}
         run: |
           flutter build apk --release --no-pub \
-            --build-number ${{ steps.build_meta.outputs.BUILD_NUMBER }}
+            --build-number ${{ steps.build_meta.outputs.BUILD_NUMBER }} \
+            --dart-define=TRANSITLAND_API_KEY="$TRANSITLAND_API_KEY"
 
       - name: Verify Go FFI library is packaged in the APK
         run: |
